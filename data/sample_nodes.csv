@@ -1,0 +1,6 @@
+id,text,type,image_prompt,timer,choice_1_text,choice_1_next,choice_1_impacts,choice_2_text,choice_2_next,choice_2_impacts,choice_3_text,choice_3_next,choice_3_impacts
+start,"Start Node Text","start","Image prompt 1",30,"Go to Node 2","node2","reputation:10;budget:-5","Go to Node 3","node3","budget:-5;security:2","Wait","node2","security:0"
+node2,"Node 2 Text","normal","Image prompt 2",30,"Finish Good","end_good","reputation:5","Finish Bad","end_bad","reputation:-5;security:-10","Wait","node2","security:-1"
+node3,"Node 3 Text","normal","Image prompt 3",30,"Finish Good","end_good","budget:5","Finish Bad","end_bad","budget:-5;reputation:-2","Wait","node3","security:-1"
+end_good,"Good End","terminal","Happy Image",0,,,,,,,,,
+end_bad,"Bad End","terminal","Sad Image",0,,,,,,,,,
