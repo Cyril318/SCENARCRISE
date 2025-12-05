@@ -1,0 +1,147 @@
+{
+  "environment": {
+    "branding_title": "Cyber Breach Crisis",
+    "branding_subtitle": "Simulation Training",
+    "context_description": "You are the CISO of a major financial institution. A data breach has been detected.",
+    "default_timer": 15
+  },
+  "rubric": {
+    "weights": {
+      "reputation": 2.0,
+      "budget": 1.0,
+      "security": 1.5
+    }
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "text": "System alerts indicate unusual outbound traffic from the customer database. What is your immediate action?",
+      "image_prompt": "Red alert screen on a dark cyber security operations center",
+      "type": "start",
+      "timer": 20,
+      "choices": [
+        {
+          "id": "c1_shutdown",
+          "text": "Shut down the database immediately to stop data leak.",
+          "next_node_id": "shutdown_consequence",
+          "impacts": [
+            { "category": "security", "value": 10 },
+            { "category": "reputation", "value": -5 }
+          ]
+        },
+        {
+          "id": "c1_monitor",
+          "text": "Monitor the traffic to identify the attacker source.",
+          "next_node_id": "monitor_consequence",
+          "impacts": [
+            { "category": "security", "value": -5 },
+            { "category": "reputation", "value": 0 }
+          ]
+        },
+        {
+          "id": "c1_ignore",
+          "text": "Ignore it, probably a false positive.",
+          "next_node_id": "disaster",
+          "impacts": [
+            { "category": "security", "value": -20 },
+            { "category": "reputation", "value": -10 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shutdown_consequence",
+      "text": "Database shutdown successful. Customers are complaining about service outage, but data is safe. PR team asks for a statement.",
+      "image_prompt": "Angry customers on social media vs secured server",
+      "type": "normal",
+      "choices": [
+        {
+          "id": "c2_honest",
+          "text": "Issue a statement admitting a potential breach prevention.",
+          "next_node_id": "end_good",
+          "impacts": [
+            { "category": "reputation", "value": 5 }
+          ]
+        },
+        {
+          "id": "c2_vague",
+          "text": "Say it's scheduled maintenance.",
+          "next_node_id": "end_mixed",
+          "impacts": [
+            { "category": "reputation", "value": -2 }
+          ]
+        },
+        {
+          "id": "c2_silence",
+          "text": "Say nothing.",
+          "next_node_id": "end_bad",
+          "impacts": [
+            { "category": "reputation", "value": -5 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "monitor_consequence",
+      "text": "You traced the IP to a known hacker group, but 10,000 records were stolen in the meantime.",
+      "image_prompt": "Hacker code on screen with stolen data counter",
+      "type": "normal",
+      "choices": [
+        {
+          "id": "c3_public",
+          "text": "Publicly disclose the theft immediately.",
+          "next_node_id": "end_mixed",
+          "impacts": [
+            { "category": "reputation", "value": -5 },
+            { "category": "security", "value": 5 }
+          ]
+        },
+        {
+          "id": "c3_negotiate",
+          "text": "Contact hackers to negotiate return of data.",
+          "next_node_id": "end_bad",
+          "impacts": [
+            { "category": "budget", "value": -10 },
+            { "category": "security", "value": -5 }
+          ]
+        },
+        {
+          "id": "c3_wait",
+          "text": "Wait for more info.",
+          "next_node_id": "disaster",
+          "impacts": [
+             { "category": "reputation", "value": -10 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "disaster",
+      "text": "It was a massive breach. The media is all over it. The CEO is furious.",
+      "image_prompt": "CEO yelling in office with news on TV",
+      "type": "terminal",
+      "choices": []
+    },
+    {
+      "id": "end_good",
+      "text": "Crisis averted with minimal damage. Good job.",
+      "image_prompt": "Thumbs up and green screens",
+      "type": "terminal",
+      "choices": []
+    },
+    {
+      "id": "end_mixed",
+      "text": "Situation controlled, but with some damage to reputation.",
+      "image_prompt": "Yellow warning signs",
+      "type": "terminal",
+      "choices": []
+    },
+    {
+      "id": "end_bad",
+      "text": "Bad outcome. You might lose your job.",
+      "image_prompt": "Fired employee packing box",
+      "type": "terminal",
+      "choices": []
+    }
+  ]
+}
