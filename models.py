@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, validator
 
 class Impact(BaseModel):
     category: str
-    value: int
+    value: float
 
 class Choice(BaseModel):
     id: str
