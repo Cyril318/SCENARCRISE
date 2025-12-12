@@ -271,8 +271,11 @@ if st.session_state.engine:
             current_node_text = engine.get_current_node().text
             choice_text = pc["choice_text"]
 
+            # Determine current turn count
+            turn_count = len(engine.history)
+
             # Generate next node
-            json_str = st.session_state.ai_client.generate_next_node(history_str, current_node_text, choice_text)
+            json_str = st.session_state.ai_client.generate_next_node(history_str, current_node_text, choice_text, turn_count=turn_count)
 
             if json_str:
                 # Clean string

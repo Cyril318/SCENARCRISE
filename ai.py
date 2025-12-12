@@ -119,21 +119,30 @@ class AIIntegration:
         """
         return self._generate_content_with_fallback(prompt)
 
-    def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str) -> Optional[str]:
+    def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str, turn_count: int = 0) -> Optional[str]:
         """
         Generates the next node based on the user's choice.
         """
         if not self.client:
             return None
 
+        # Logic to enforce termination around 20 turns
+        termination_instruction = ""
+        if turn_count >= 20:
+            termination_instruction = "CRITICAL: This is the 20th turn. You MUST end the simulation now. Generate a conclusion based on the user's performance. Set 'type': 'terminal' and 'choices': []."
+        elif turn_count >= 15:
+            termination_instruction = "NOTE: The simulation is approaching its end (Turn 20). Start wrapping up the narrative and converging towards a conclusion."
+
         prompt = f"""
-        Continue the crisis simulation.
+        Continue the crisis simulation. Turn {turn_count + 1}.
 
         Context/History:
         {history_context}
 
         Current Situation: "{current_node_text}"
         User Choice: "{choice_text}"
+
+        {termination_instruction}
 
         Generate the consequences and the next node.
         Return a JSON object for the NEXT node:
