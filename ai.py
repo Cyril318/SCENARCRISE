@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import urllib.parse
+import time
 from typing import Optional
 from google import genai
 from google.genai import types
@@ -45,11 +46,11 @@ class AIIntegration:
 
         try:
             response = self.client.models.generate_content(
-                model='gemini-2.0-flash', # Use a capable model
+                model='gemini-1.5-flash', # Switch to 1.5-flash for better stability/quota
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type='application/json',
-                    max_output_tokens=8192  # Increase token limit for large JSONs (10+ nodes)
+                    max_output_tokens=8192
                 )
             )
             return response.text
@@ -76,16 +77,24 @@ class AIIntegration:
         Keep descriptions concise.
         Return ONLY valid JSON.
         """
-        try:
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type='application/json')
-            )
-            return response.text
-        except Exception as e:
-            print(f"Error generating initial node: {e}")
-            return None
+
+        for attempt in range(3): # Retry logic
+            try:
+                response = self.client.models.generate_content(
+                    model='gemini-1.5-flash', # Switch to 1.5-flash
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_mime_type='application/json')
+                )
+                return response.text
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    print(f"Rate limit hit. Retrying in 10s... (Attempt {attempt+1}/3)")
+                    time.sleep(10) # Wait 10s
+                else:
+                    print(f"Error generating initial node: {e}")
+                    return None
+        return None
 
     def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str) -> Optional[str]:
         """
@@ -122,13 +131,20 @@ class AIIntegration:
         Keep it concise.
         Return ONLY valid JSON.
         """
-        try:
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type='application/json')
-            )
-            return response.text
-        except Exception as e:
-            print(f"Error generating next node: {e}")
-            return None
+        for attempt in range(3):
+            try:
+                response = self.client.models.generate_content(
+                    model='gemini-1.5-flash', # Switch to 1.5-flash
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_mime_type='application/json')
+                )
+                return response.text
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    print(f"Rate limit hit. Retrying in 10s... (Attempt {attempt+1}/3)")
+                    time.sleep(10)
+                else:
+                    print(f"Error generating next node: {e}")
+                    return None
+        return None
