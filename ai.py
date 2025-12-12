@@ -1,0 +1,134 @@
+import os
+import json
+import base64
+import urllib.parse
+from typing import Optional
+from google import genai
+from google.genai import types
+from models import Scenario
+
+class AIIntegration:
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key
+        # Initialize the new client.
+        if self.api_key:
+            self.client = genai.Client(api_key=self.api_key)
+        else:
+            self.client = None
+
+    def generate_scenario_from_environment(self, environment_text: str) -> Optional[str]:
+        """
+        Generates a JSON scenario string based on the environment description using Gemini (google-genai SDK).
+        """
+        if not self.client:
+            return None
+
+        prompt = f"""
+        Generate a JSON scenario for a crisis simulation based on the following environment:
+        "{environment_text}"
+
+        The JSON must adhere to the following structure (schema):
+        {{
+          "environment": {{ "branding_title": "string", "branding_subtitle": "string", "context_description": "string", "default_timer": int }},
+          "nodes": [ {{ "id": "string", "text": "string", "image_prompt": "string", "type": "start|normal|terminal", "timer": int, "choices": [ {{ "id": "string", "text": "string", "next_node_id": "string", "impacts": [ {{ "category": "string", "value": int }} ] }} ] }} ],
+          "rubric": {{ "weights": {{ "category_name": weight_float }} }}
+        }}
+
+        Ensure there is exactly one 'start' node and at least one 'terminal' node.
+        Ensure choices reference valid node IDs.
+        Create a branching narrative where the user plays for at least 10 turns (depth >= 10) regardless of their choices.
+        IMPORTANT: To keep the JSON size manageable, use a converging narrative structure (e.g., bottlenecks where different choices lead to the same next node or a limited set of next nodes).
+        Do NOT create a full exponential tree. Limit the TOTAL number of nodes to maximum 50.
+        Keep text descriptions concise.
+        Return ONLY valid JSON.
+        """
+
+        try:
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash', # Use a capable model
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type='application/json',
+                    max_output_tokens=8192  # Increase token limit for large JSONs (10+ nodes)
+                )
+            )
+            return response.text
+        except Exception as e:
+            print(f"Error generating scenario with Gemini: {e}")
+            return None
+
+    def generate_initial_node(self, environment_text: str) -> Optional[str]:
+        """
+        Generates the initial environment and start node for a dynamic scenario.
+        """
+        if not self.client:
+            return None
+
+        prompt = f"""
+        Initialize a dynamic crisis simulation scenario based on: "{environment_text}".
+
+        Return a JSON object with:
+        - "environment": {{ "branding_title", "branding_subtitle", "context_description", "default_timer" }}
+        - "rubric": {{ "weights": {{ category: weight }} }}
+        - "start_node": {{ "id": "start", "text": "Initial situation description...", "image_prompt": "...", "type": "start", "timer": int, "choices": [ {{ "id": "c1", "text": "...", "impacts": [...] }} ] }}
+
+        Note: The choices in 'start_node' do NOT need 'next_node_id' as they will be generated dynamically.
+        Keep descriptions concise.
+        Return ONLY valid JSON.
+        """
+        try:
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type='application/json')
+            )
+            return response.text
+        except Exception as e:
+            print(f"Error generating initial node: {e}")
+            return None
+
+    def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str) -> Optional[str]:
+        """
+        Generates the next node based on the user's choice.
+        """
+        if not self.client:
+            return None
+
+        prompt = f"""
+        Continue the crisis simulation.
+
+        Context/History:
+        {history_context}
+
+        Current Situation: "{current_node_text}"
+        User Choice: "{choice_text}"
+
+        Generate the consequences and the next node.
+        Return a JSON object for the NEXT node:
+        {{
+          "id": "node_<random_suffix>",
+          "text": "Consequence description and new situation...",
+          "image_prompt": "Visual description...",
+          "type": "normal",
+          "timer": 30,
+          "choices": [
+             {{ "id": "c1", "text": "Action 1...", "impacts": [ {{ "category": "...", "value": ... }} ] }},
+             {{ "id": "c2", "text": "Action 2...", "impacts": [...] }},
+             {{ "id": "c3", "text": "Action 3...", "impacts": [...] }}
+          ]
+        }}
+
+        If the story should end, set "type": "terminal" and "choices": [].
+        Keep it concise.
+        Return ONLY valid JSON.
+        """
+        try:
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type='application/json')
+            )
+            return response.text
+        except Exception as e:
+            print(f"Error generating next node: {e}")
+            return None
