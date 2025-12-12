@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import json
 import time
+import socket
+import uuid
 
 from models import Scenario, Node, Environment, ScoringRubric, Choice
 from engine import ScenarioEngine
@@ -21,9 +23,20 @@ game_manager = get_game_manager()
 
 # Initialize Local Session State
 if 'session_id' not in st.session_state:
-    st.session_state.session_id = str(time.time()) # Unique ID for this browser tab
+    st.session_state.session_id = str(uuid.uuid4()) # Unique ID for this browser tab
 if 'ai_client' not in st.session_state:
     st.session_state.ai_client = None
+
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # doesn't even have to be reachable
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+        s.close()
+        return IP
+    except Exception:
+        return "127.0.0.1"
 
 # Inject Custom CSS
 def local_css():
@@ -146,9 +159,18 @@ elif not game_manager.game_started:
         # Invite Section
         with st.expander("Invite Players", expanded=True):
             st.info("Share this URL with other players to join the lobby:")
-            # Attempt to show the base URL if possible, otherwise generic
+
+            local_ip = get_local_ip()
+            lan_url = f"http://{local_ip}:8501"
+
+            st.markdown("**Local Network (LAN):**")
+            st.code(lan_url, language=None)
+            st.caption("Use this if players are on the same WiFi.")
+
+            st.markdown("**Localhost (Host only):**")
             st.code("http://localhost:8501", language=None)
-            st.caption("Note: If deployed remotely, share the public URL.")
+
+            st.warning("⚠️ Ensure your firewall allows incoming connections on port 8501 if connecting from another computer.")
 
         st.divider()
 
