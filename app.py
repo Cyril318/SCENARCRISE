@@ -159,10 +159,30 @@ with st.sidebar:
                 st.error(f"Error: {e}")
 
     elif load_mode == "Generate with AI":
-        env_text = st.text_area("Describe Scenario Context", height=150, placeholder="e.g. A cyber attack on a hospital...")
+        # Allow user to choose between text input or CSV upload
+        input_type = st.radio("Context Input", ["Text", "CSV"], horizontal=True)
+        env_text = ""
+
+        if input_type == "Text":
+            env_text = st.text_area("Describe Scenario Context", height=150, placeholder="e.g. A cyber attack on a hospital...")
+        else:
+            context_file = st.file_uploader("Upload Context CSV", type=["csv"])
+            if context_file:
+                try:
+                    df = pd.read_csv(context_file)
+                    # Convert the entire CSV content to a string to pass as context
+                    env_text = df.to_string(index=False)
+                    st.info(f"Loaded context from CSV with {len(df)} rows.")
+                    with st.expander("View Loaded Context"):
+                        st.text(env_text)
+                except Exception as e:
+                    st.error(f"Error reading CSV: {e}")
+
         if st.button("Generate", type="primary"):
             if not api_key:
                 st.error("Gemini API Key required.")
+            elif not env_text:
+                st.error("Please provide context text or upload a CSV.")
             else:
                 with st.spinner("Initializing scenario..."):
                     # Use new generate_initial_node method
