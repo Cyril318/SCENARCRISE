@@ -97,8 +97,22 @@ class AIIntegration:
         Return a JSON object with:
         - "environment": {{ "branding_title", "branding_subtitle", "context_description", "default_timer" }}
         - "rubric": {{ "weights": {{ category: weight }} }}
-        - "start_node": {{ "id": "start", "text": "Initial situation description...", "image_prompt": "...", "type": "start", "timer": int, "choices": [ {{ "id": "c1", "text": "...", "impacts": [...] }} ] }}
+        - "start_node": {{
+            "id": "start",
+            "text": "Initial situation description...",
+            "image_prompt": "...",
+            "type": "start",
+            "timer": int,
+            "choices": [
+                {{
+                    "id": "c1",
+                    "text": "...",
+                    "impacts": [ {{ "category": "CategoryName", "value": 5.0 }} ]
+                }}
+            ]
+        }}
 
+        IMPORTANT: 'impacts' must be a LIST OF OBJECTS, not strings. Each object must have "category" (string) and "value" (number).
         Note: The choices in 'start_node' do NOT need 'next_node_id' as they will be generated dynamically.
         Keep descriptions concise.
         Return ONLY valid JSON.
@@ -130,12 +144,13 @@ class AIIntegration:
           "type": "normal",
           "timer": 30,
           "choices": [
-             {{ "id": "c1", "text": "Action 1...", "impacts": [ {{ "category": "...", "value": ... }} ] }},
-             {{ "id": "c2", "text": "Action 2...", "impacts": [...] }},
+             {{ "id": "c1", "text": "Action 1...", "impacts": [ {{ "category": "CategoryName", "value": 5.0 }} ] }},
+             {{ "id": "c2", "text": "Action 2...", "impacts": [ {{ "category": "CategoryName", "value": -2.0 }} ] }},
              {{ "id": "c3", "text": "Action 3...", "impacts": [...] }}
           ]
         }}
 
+        IMPORTANT: 'impacts' must be a LIST OF OBJECTS with "category" and "value". Do NOT use strings.
         If the story should end, set "type": "terminal" and "choices": [].
         Keep it concise.
         Return ONLY valid JSON.
