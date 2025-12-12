@@ -230,10 +230,17 @@ else:
             st.subheader(f"Your Action: {player.role}")
             with st.form(key=f"action_form_{game_manager.current_turn}"):
                 action_text = st.text_area("Describe your decision...", height=100)
-                submit = st.form_submit_button("Submit Action")
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    submit = st.form_submit_button("Submit Action", type="primary")
+                with c2:
+                    pass_turn = st.form_submit_button("Pass Turn")
 
             if submit and action_text:
                 game_manager.submit_action(st.session_state.session_id, action_text)
+                st.rerun()
+            elif pass_turn:
+                game_manager.submit_action(st.session_state.session_id, "[PASSE]")
                 st.rerun()
         elif player and player.has_acted:
             st.info("✅ Action submitted. Waiting for other players...")

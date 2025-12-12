@@ -99,6 +99,8 @@ class AIIntegration:
         IMPORTANT: Do NOT generate specific choices for the user. The user will type their own action.
         However, the schema requires a "choices" list. Please return an EMPTY list [] for "choices" in the start node.
 
+        CRITICAL INSTRUCTION: The text description of the node MUST end with a clear Call to Action or a situation requiring intervention from at least one of the players/roles.
+
         Return a JSON object with:
         - "environment": {{ "branding_title", "branding_subtitle", "context_description", "default_timer" }}
         - "rubric": {{ "weights": {{ category: weight }} }}
@@ -148,8 +150,11 @@ class AIIntegration:
 
         Analyze the collective actions of the players (different roles) and generate the consolidated consequences (the next inject/event).
         Consider how different actions might conflict or synergize.
+        NOTE: If a player action is "[PASSE]", interpret it as the character doing nothing, waiting, or being passive this turn.
 
         {termination_instruction}
+
+        CRITICAL INSTRUCTION: The text description of the node MUST end with a clear Call to Action or a situation requiring intervention from at least one of the players/roles.
 
         Return a JSON object for the NEXT node:
         {{
