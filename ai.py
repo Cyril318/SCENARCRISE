@@ -154,12 +154,19 @@ class AIIntegration:
 
         {termination_instruction}
 
-        CRITICAL INSTRUCTION: The text description of the node MUST end with a clear Call to Action or a situation requiring intervention from at least one of the players/roles.
+        CRITICAL INSTRUCTION:
+        1. The text description of the node MUST end with a clear Call to Action or a situation requiring intervention from at least one of the players/roles.
+        2. Generate PRIVATE INFORMATION for specific roles if they would notice something others wouldn't, or if they are in a specific location.
+           This is especially important from Turn 2 onwards to create information asymmetry.
 
         Return a JSON object for the NEXT node:
         {{
           "id": "node_<random_suffix>",
-          "text": "Conséquences des actions collectives et nouvelle situation (en Français)...",
+          "text": "Conséquences des actions collectives et nouvelle situation (en Français) - PUBLIC INFORMATION...",
+          "private_info": {{
+              "Role Name": "Information privée spécifique à ce rôle (en Français)...",
+              "Another Role": "Autre info..."
+          }},
           "image_prompt": "Visual description...",
           "type": "normal",
           "timer": 30,
@@ -167,7 +174,7 @@ class AIIntegration:
         }}
 
         IMPORTANT:
-        1. The content (text) MUST be in FRENCH.
+        1. The content (text and private_info) MUST be in FRENCH.
         2. Do NOT generate choices. The user will type their next action freely. Return an empty list [] for "choices".
         3. Even though there are no choices, you can still estimate the impact of the USER'S ACTION on the score.
            However, since the schema puts impacts on choices, we cannot easily return impacts here without a dummy choice.

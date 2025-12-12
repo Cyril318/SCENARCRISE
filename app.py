@@ -225,6 +225,13 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
+        # Private Information Check
+        if player and player.role and current_node.private_info:
+            role_private_msg = current_node.private_info.get(player.role)
+            if role_private_msg:
+                with st.expander("🔒 PRIVATE INTEL (Only for your eyes)", expanded=True):
+                    st.info(role_private_msg)
+
         # Input Area
         if player and player.role and not player.has_acted:
             st.subheader(f"Your Action: {player.role}")
