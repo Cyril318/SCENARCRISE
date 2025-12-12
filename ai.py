@@ -119,7 +119,7 @@ class AIIntegration:
 
     def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str, turn_count: int = 0) -> Optional[str]:
         """
-        Generates the next node based on the user's choice.
+        Generates the next node based on the user's choice (or multiple users' actions).
         """
         if not self.client:
             return None
@@ -131,23 +131,30 @@ class AIIntegration:
         elif turn_count >= 15:
             termination_instruction = "NOTE: The simulation is approaching its end (Turn 20). Start wrapping up the narrative and converging towards a conclusion."
 
+        # Handle multiple actions (Multiplayer)
+        # If choice_text is a formatted string of multiple actions, the prompt adapts nicely.
+        actions_description = choice_text
+
         prompt = f"""
-        Continue the crisis simulation. Turn {turn_count + 1}.
+        Continue the crisis simulation (Multiplayer). Turn {turn_count + 1}.
 
         Context/History:
         {history_context}
 
         Current Situation: "{current_node_text}"
-        User Action (Free Text): "{choice_text}"
 
-        Analyze the user's action and generate the consequences (the next inject/event).
+        User Actions (Team):
+        {actions_description}
+
+        Analyze the collective actions of the players (different roles) and generate the consolidated consequences (the next inject/event).
+        Consider how different actions might conflict or synergize.
 
         {termination_instruction}
 
         Return a JSON object for the NEXT node:
         {{
           "id": "node_<random_suffix>",
-          "text": "Conséquences de l'action utilisateur et nouvelle situation (en Français)...",
+          "text": "Conséquences des actions collectives et nouvelle situation (en Français)...",
           "image_prompt": "Visual description...",
           "type": "normal",
           "timer": 30,
