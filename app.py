@@ -178,6 +178,11 @@ with st.sidebar:
 
                         try:
                             data = json.loads(json_str_clean)
+                            if isinstance(data, list):
+                                if len(data) > 0:
+                                    data = data[0]
+                                else:
+                                    raise ValueError("AI returned an empty list.")
 
                             # Construct initial scenario structure
                             # Expected from generate_initial_node: { environment, rubric, start_node }

@@ -104,7 +104,7 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
                     if ':' in part:
                         cat, val = part.split(':', 1)
                         try:
-                            impacts.append(Impact(category=cat.strip(), value=int(val.strip())))
+                            impacts.append(Impact(category=cat.strip(), value=float(val.strip())))
                         except ValueError:
                             pass # Handle parsing error gracefully
             else:
@@ -113,7 +113,7 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
                 c_imp_val = row.get(f'choice_{i}_impact_value')
 
                 if not pd.isna(c_imp_cat) and not pd.isna(c_imp_val):
-                    impacts.append(Impact(category=str(c_imp_cat), value=int(c_imp_val)))
+                    impacts.append(Impact(category=str(c_imp_cat), value=float(c_imp_val)))
 
             choices.append(Choice(
                 id=f"{row['id']}_c{i}",
