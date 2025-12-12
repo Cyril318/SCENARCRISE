@@ -1,0 +1,49 @@
+Description de la demande ,Je suis un organisme qui a besoin que tu me génères un chronogramme de scénario de crise.  ,,
+,,,
+,,,
+INFORMATIONS NÉCESSAIRES,,FORMAT STANDARD ,DESCRIPTION
+DATE/HEURE DÉBUT,19/03/2024 16:23:00,JOUR/MOIS/ANNÉE HEURE:MINUTE:SECONDE,Date et Heure de début de la crise
+THÈME,INTOXICATION ALIMENTAIRE,"TEXTE,TEXTE,TEXTE",Thème de la crise
+DESCRIPTION CONTEXTE,"Des étudiants se sentent mal après être allé à la cantine, il y a eu pendant la semaine une distribution de repas ",TEXTE,
+SAISON,HIVER,TEXTE,
+ACTEURS EXTERNES,"POMPIER, POLICE, SAMU, ministère de l'enseignement, parents d'élèves",,
+ACTEURS DE LA CRISE,"Service de sécurité de l'école, directeur, élèves","TEXTE,TEXTE,TEXTE",Différentes entités qui gèrent la crise
+TYPE LIEU,UNIVERSITÉ,TEXTE,"Type de lieu : Site industriel, CEVESO, école, lieu public.. "
+TYPE INJECT,"STRUCTURANT,SATURANT","TEXTE,TEXTE",
+NATURE INJECT,,,
+LIEU,Mines Nancy,TEXTE,Lieu/ Espace d'exercice
+STRUCTURE LIEU,"SALLE1,SALLE2,SALLE3,SALLE4","TEXTE,TEXTE,TEXTE",Structure du lieu (Noms des salles par exemple)
+TYPE DES INJECTS,"sms, tweets, appels",,
+TYPE D INTERVENTION,,,
+CONNEXION LIEU,"(SALLE1,SALLE2)/(SALLE3/SALLE2),(SALLE4/SALLE1)","(TEXTE,TEXTE)/(TEXTE,TEXTE)",Connexions entre les salles
+DATE/HEURE FIN,19/03/2024 23:00:00,JOUR/MOIS/ANNÉE HEURE:MINUTE:SECONDE,Durée de la simulation ou bien heure où il n’y a plus de nouveaux stimulis
+NOMBRE DE CHOIX,3,NOMBRE,
+NOMBRE INJECTS,10,NOMBRE,Nombre d'événements pour pas que l'histoire ne soit sans fin
+OBJECTIF PÉDAGOGIQUE,None,TEXTE ou NONE,objectif pédagogique
+Conséquences ,"Sécurité physique et psychologique des étudiants et personnels présents sur les sites impactés. 
+
+Impacts sur la continuité des activités et sur les équipes
+
+Retentissement médiatique potentiellement très important. ",," Exemple :Sécurité physique et psychologique des étudiants et personnels présents sur les sites impactés. 
+
+Impacts sur la continuité des activités et sur les équipes
+
+Retentissement médiatique potentiellement très important. "
+,,,
+CONTRAINTES ,N°1,,
+CONTRAINTE DE LIEU,RESTER DANS LE CAMPUS ARTEM,,
+CONTRAINTE N° ÉVENEMENTS,3,,
+,,,
+HISTORIQUE ,,CHOIX FAIT PAR L'UTILISATEUR,DESCRIPTION_INJECT
+INJECT1,,,
+INJECT2,,,
+INJECT3,,,
+INJECT4,,,
+INJECT5,,,
+INJECT6,,,
+INJECT7,,,
+INJECT8,,,
+INJECT9,,,
+INJECT10,,,
+...,,,
+INJECT_N,,,
