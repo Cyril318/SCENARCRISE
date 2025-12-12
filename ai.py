@@ -17,9 +17,48 @@ class AIIntegration:
         else:
             self.client = None
 
+    def _generate_content_with_fallback(self, prompt: str) -> Optional[str]:
+        """
+        Helper method to generate content with model fallback and retry logic.
+        """
+        models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash-001', 'gemini-1.5-flash', 'gemini-1.5-pro']
+
+        for model in models_to_try:
+            for attempt in range(3): # Retry logic per model
+                try:
+                    response = self.client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type='application/json',
+                            max_output_tokens=8192
+                        )
+                    )
+                    return response.text
+                except Exception as e:
+                    error_str = str(e)
+                    # Handle Rate Limits (429) by waiting and retrying the SAME model
+                    if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                        print(f"Rate limit hit on {model}. Retrying in 10s... (Attempt {attempt+1}/3)")
+                        time.sleep(10)
+                        continue # Retry same model
+
+                    # Handle Not Found (404) or other client errors by switching to NEXT model
+                    if "404" in error_str or "NOT_FOUND" in error_str:
+                        print(f"Model {model} not found. Trying next model...")
+                        break # Break retry loop, go to next model
+
+                    # Other errors -> likely unrecoverable for this model or prompt issue
+                    print(f"Error with {model}: {e}")
+                    break # Break retry loop, try next model just in case? Or stop?
+                          # Safer to try next model.
+
+        print("All models failed.")
+        return None
+
     def generate_scenario_from_environment(self, environment_text: str) -> Optional[str]:
         """
-        Generates a JSON scenario string based on the environment description using Gemini (google-genai SDK).
+        Generates a JSON scenario string based on the environment description using Gemini.
         """
         if not self.client:
             return None
@@ -43,20 +82,7 @@ class AIIntegration:
         Keep text descriptions concise.
         Return ONLY valid JSON.
         """
-
-        try:
-            response = self.client.models.generate_content(
-                model='gemini-1.5-flash', # Switch to 1.5-flash for better stability/quota
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type='application/json',
-                    max_output_tokens=8192
-                )
-            )
-            return response.text
-        except Exception as e:
-            print(f"Error generating scenario with Gemini: {e}")
-            return None
+        return self._generate_content_with_fallback(prompt)
 
     def generate_initial_node(self, environment_text: str) -> Optional[str]:
         """
@@ -77,24 +103,7 @@ class AIIntegration:
         Keep descriptions concise.
         Return ONLY valid JSON.
         """
-
-        for attempt in range(3): # Retry logic
-            try:
-                response = self.client.models.generate_content(
-                    model='gemini-1.5-flash', # Switch to 1.5-flash
-                    contents=prompt,
-                    config=types.GenerateContentConfig(response_mime_type='application/json')
-                )
-                return response.text
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                    print(f"Rate limit hit. Retrying in 10s... (Attempt {attempt+1}/3)")
-                    time.sleep(10) # Wait 10s
-                else:
-                    print(f"Error generating initial node: {e}")
-                    return None
-        return None
+        return self._generate_content_with_fallback(prompt)
 
     def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str) -> Optional[str]:
         """
@@ -131,20 +140,4 @@ class AIIntegration:
         Keep it concise.
         Return ONLY valid JSON.
         """
-        for attempt in range(3):
-            try:
-                response = self.client.models.generate_content(
-                    model='gemini-1.5-flash', # Switch to 1.5-flash
-                    contents=prompt,
-                    config=types.GenerateContentConfig(response_mime_type='application/json')
-                )
-                return response.text
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                    print(f"Rate limit hit. Retrying in 10s... (Attempt {attempt+1}/3)")
-                    time.sleep(10)
-                else:
-                    print(f"Error generating next node: {e}")
-                    return None
-        return None
+        return self._generate_content_with_fallback(prompt)
