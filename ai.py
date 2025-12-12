@@ -94,26 +94,24 @@ class AIIntegration:
         prompt = f"""
         Initialize a dynamic crisis simulation scenario based on: "{environment_text}".
 
+        You are generating the start of a simulation where the user can type any action.
+        Therefore, the "start_node" should describe the initial inject/event.
+        IMPORTANT: Do NOT generate specific choices for the user. The user will type their own action.
+        However, the schema requires a "choices" list. Please return an EMPTY list [] for "choices" in the start node.
+
         Return a JSON object with:
         - "environment": {{ "branding_title", "branding_subtitle", "context_description", "default_timer" }}
         - "rubric": {{ "weights": {{ category: weight }} }}
         - "start_node": {{
             "id": "start",
-            "text": "Initial situation description...",
+            "text": "Description de la situation initiale (en Français)...",
             "image_prompt": "...",
             "type": "start",
             "timer": int,
-            "choices": [
-                {{
-                    "id": "c1",
-                    "text": "...",
-                    "impacts": [ {{ "category": "CategoryName", "value": 5.0 }} ]
-                }}
-            ]
+            "choices": []
         }}
 
-        IMPORTANT: 'impacts' must be a LIST OF OBJECTS, not strings. Each object must have "category" (string) and "value" (number).
-        Note: The choices in 'start_node' do NOT need 'next_node_id' as they will be generated dynamically.
+        LANGUAGE: The "text", "branding_title", etc. MUST be in FRENCH.
         Keep descriptions concise.
         Return ONLY valid JSON.
         """
@@ -129,7 +127,7 @@ class AIIntegration:
         # Logic to enforce termination around 20 turns
         termination_instruction = ""
         if turn_count >= 20:
-            termination_instruction = "CRITICAL: This is the 20th turn. You MUST end the simulation now. Generate a conclusion based on the user's performance. Set 'type': 'terminal' and 'choices': []."
+            termination_instruction = "CRITICAL: This is the 20th turn. You MUST end the simulation now. Generate a conclusion based on the user's performance. Set 'type': 'terminal'."
         elif turn_count >= 15:
             termination_instruction = "NOTE: The simulation is approaching its end (Turn 20). Start wrapping up the narrative and converging towards a conclusion."
 
@@ -140,27 +138,31 @@ class AIIntegration:
         {history_context}
 
         Current Situation: "{current_node_text}"
-        User Choice: "{choice_text}"
+        User Action (Free Text): "{choice_text}"
+
+        Analyze the user's action and generate the consequences (the next inject/event).
 
         {termination_instruction}
 
-        Generate the consequences and the next node.
         Return a JSON object for the NEXT node:
         {{
           "id": "node_<random_suffix>",
-          "text": "Consequence description and new situation...",
+          "text": "Conséquences de l'action utilisateur et nouvelle situation (en Français)...",
           "image_prompt": "Visual description...",
           "type": "normal",
           "timer": 30,
-          "choices": [
-             {{ "id": "c1", "text": "Action 1...", "impacts": [ {{ "category": "CategoryName", "value": 5.0 }} ] }},
-             {{ "id": "c2", "text": "Action 2...", "impacts": [ {{ "category": "CategoryName", "value": -2.0 }} ] }},
-             {{ "id": "c3", "text": "Action 3...", "impacts": [...] }}
-          ]
+          "choices": []
         }}
 
-        IMPORTANT: 'impacts' must be a LIST OF OBJECTS with "category" and "value". Do NOT use strings.
-        If the story should end, set "type": "terminal" and "choices": [].
+        IMPORTANT:
+        1. The content (text) MUST be in FRENCH.
+        2. Do NOT generate choices. The user will type their next action freely. Return an empty list [] for "choices".
+        3. Even though there are no choices, you can still estimate the impact of the USER'S ACTION on the score.
+           However, since the schema puts impacts on choices, we cannot easily return impacts here without a dummy choice.
+           WORKAROUND: Return a single dummy choice in the list ONLY if you need to apply a score impact, otherwise empty.
+           Actually, let's keep it simple: Return an EMPTY choices list. We will rely on the narrative for now.
+
+        If the story should end, set "type": "terminal".
         Keep it concise.
         Return ONLY valid JSON.
         """

@@ -363,31 +363,50 @@ if st.session_state.engine:
             st.balloons()
             st.markdown(f"**Final Score:** {engine.score}")
         else:
-            for idx, choice in enumerate(current_node.choices):
-                # Wrapper for dynamic generation
-                def handle_dynamic_choice(choice_idx, choice_text):
-                    # 1. Update state (score, log, history) using existing make_choice
-                    # Note: make_choice moves current_node_id to next_node_id.
-                    # In dynamic mode, next_node_id might be None or a placeholder.
+            # Check if we are in Free Text mode (choices list is empty but type is normal/start)
+            # Or if the node has choices, render buttons.
+            if len(current_node.choices) > 0:
+                for idx, choice in enumerate(current_node.choices):
+                    # Wrapper for dynamic generation
+                    def handle_dynamic_choice(choice_idx, choice_text):
+                        st.session_state.pending_choice = {
+                            "node_id": engine.current_node_id,
+                            "choice_idx": choice_idx,
+                            "choice_text": choice_text
+                        }
 
-                    # We need a way to intercept the transition.
-                    # Since engine.make_choice assumes static graph, we need to modify it or do logic here.
-                    # But we can't do async generation in callback easily.
-                    # WORKAROUND: We set a flag in session state, and the main loop handles generation.
+                    # Using callbacks
+                    st.button(
+                        choice.text,
+                        key=f"btn_{current_node.id}_{idx}",
+                        on_click=handle_dynamic_choice,
+                        args=(idx, choice.text)
+                    )
+            else:
+                # Free Text Input Mode
+                with st.form(key=f"form_{current_node.id}"):
+                    user_action = st.text_area("Votre Action", placeholder="Décrivez ce que vous faites...", key=f"input_{current_node.id}")
+                    submit_action = st.form_submit_button("Valider l'action")
+
+                if submit_action and user_action:
+                    # We need to simulate a choice to keep the engine happy.
+                    # We'll create a temporary "choice" object on the fly or just pass the data.
+                    # Since engine.make_choice expects an index, we might need to inject a choice into the current node first?
+                    # Actually, the logic for 'pending_choice' handles the generation.
+                    # But we need an index. Let's append a temporary choice to the node.
+
+                    # Create a dummy choice representing the user action
+                    from models import Choice
+                    dummy_choice = Choice(id="user_action", text=user_action)
+                    current_node.choices.append(dummy_choice)
+                    choice_idx = len(current_node.choices) - 1
 
                     st.session_state.pending_choice = {
                         "node_id": engine.current_node_id,
                         "choice_idx": choice_idx,
-                        "choice_text": choice_text
+                        "choice_text": user_action
                     }
-
-                # Using callbacks
-                st.button(
-                    choice.text,
-                    key=f"btn_{current_node.id}_{idx}",
-                    on_click=handle_dynamic_choice,
-                    args=(idx, choice.text)
-                )
+                    st.rerun()
 
     # Log Display (Full Width Bottom)
     st.markdown("---")
