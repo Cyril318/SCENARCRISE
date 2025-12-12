@@ -143,6 +143,15 @@ elif not game_manager.game_started:
     with col2:
         st.subheader("Players Connected")
 
+        # Invite Section
+        with st.expander("Invite Players", expanded=True):
+            st.info("Share this URL with other players to join the lobby:")
+            # Attempt to show the base URL if possible, otherwise generic
+            st.code("http://localhost:8501", language=None)
+            st.caption("Note: If deployed remotely, share the public URL.")
+
+        st.divider()
+
         # Display list of players
         my_player = game_manager.players.get(st.session_state.session_id)
 
