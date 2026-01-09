@@ -94,49 +94,94 @@ class AIIntegration:
         prompt = f"""
         Initialize a dynamic crisis simulation scenario based on: "{environment_text}".
 
+        You are generating the start of a simulation where the user can type any action.
+        Therefore, the "start_node" should describe the initial inject/event.
+        IMPORTANT: Do NOT generate specific choices for the user. The user will type their own action.
+        However, the schema requires a "choices" list. Please return an EMPTY list [] for "choices" in the start node.
+
+        CRITICAL INSTRUCTION: The text description of the node MUST end with a clear Call to Action or a situation requiring intervention from at least one of the players/roles.
+
         Return a JSON object with:
         - "environment": {{ "branding_title", "branding_subtitle", "context_description", "default_timer" }}
         - "rubric": {{ "weights": {{ category: weight }} }}
-        - "start_node": {{ "id": "start", "text": "Initial situation description...", "image_prompt": "...", "type": "start", "timer": int, "choices": [ {{ "id": "c1", "text": "...", "impacts": [...] }} ] }}
+        - "start_node": {{
+            "id": "start",
+            "text": "Description de la situation initiale (en Français)...",
+            "image_prompt": "...",
+            "type": "start",
+            "timer": int,
+            "choices": []
+        }}
 
-        Note: The choices in 'start_node' do NOT need 'next_node_id' as they will be generated dynamically.
+        LANGUAGE: The "text", "branding_title", etc. MUST be in FRENCH.
         Keep descriptions concise.
         Return ONLY valid JSON.
         """
         return self._generate_content_with_fallback(prompt)
 
-    def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str) -> Optional[str]:
+    def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str, turn_count: int = 0) -> Optional[str]:
         """
-        Generates the next node based on the user's choice.
+        Generates the next node based on the user's choice (or multiple users' actions).
         """
         if not self.client:
             return None
 
+        # Logic to enforce termination around 20 turns
+        termination_instruction = ""
+        if turn_count >= 20:
+            termination_instruction = "CRITICAL: This is the 20th turn. You MUST end the simulation now. Generate a conclusion based on the user's performance. Set 'type': 'terminal'."
+        elif turn_count >= 15:
+            termination_instruction = "NOTE: The simulation is approaching its end (Turn 20). Start wrapping up the narrative and converging towards a conclusion."
+
+        # Handle multiple actions (Multiplayer)
+        # If choice_text is a formatted string of multiple actions, the prompt adapts nicely.
+        actions_description = choice_text
+
         prompt = f"""
-        Continue the crisis simulation.
+        Continue the crisis simulation (Multiplayer). Turn {turn_count + 1}.
 
         Context/History:
         {history_context}
 
         Current Situation: "{current_node_text}"
-        User Choice: "{choice_text}"
 
-        Generate the consequences and the next node.
+        User Actions (Team):
+        {actions_description}
+
+        Analyze the collective actions of the players (different roles) and generate the consolidated consequences (the next inject/event).
+        Consider how different actions might conflict or synergize.
+        NOTE: If a player action is "[PASSE]", interpret it as the character doing nothing, waiting, or being passive this turn.
+
+        {termination_instruction}
+
+        CRITICAL INSTRUCTION:
+        1. The text description of the node MUST end with a clear Call to Action or a situation requiring intervention from at least one of the players/roles.
+        2. Generate PRIVATE INFORMATION for specific roles if they would notice something others wouldn't, or if they are in a specific location.
+           This is especially important from Turn 2 onwards to create information asymmetry.
+
         Return a JSON object for the NEXT node:
         {{
           "id": "node_<random_suffix>",
-          "text": "Consequence description and new situation...",
+          "text": "Conséquences des actions collectives et nouvelle situation (en Français) - PUBLIC INFORMATION...",
+          "private_info": {{
+              "Role Name": "Information privée spécifique à ce rôle (en Français)...",
+              "Another Role": "Autre info..."
+          }},
           "image_prompt": "Visual description...",
           "type": "normal",
           "timer": 30,
-          "choices": [
-             {{ "id": "c1", "text": "Action 1...", "impacts": [ {{ "category": "...", "value": ... }} ] }},
-             {{ "id": "c2", "text": "Action 2...", "impacts": [...] }},
-             {{ "id": "c3", "text": "Action 3...", "impacts": [...] }}
-          ]
+          "choices": []
         }}
 
-        If the story should end, set "type": "terminal" and "choices": [].
+        IMPORTANT:
+        1. The content (text and private_info) MUST be in FRENCH.
+        2. Do NOT generate choices. The user will type their next action freely. Return an empty list [] for "choices".
+        3. Even though there are no choices, you can still estimate the impact of the USER'S ACTION on the score.
+           However, since the schema puts impacts on choices, we cannot easily return impacts here without a dummy choice.
+           WORKAROUND: Return a single dummy choice in the list ONLY if you need to apply a score impact, otherwise empty.
+           Actually, let's keep it simple: Return an EMPTY choices list. We will rely on the narrative for now.
+
+        If the story should end, set "type": "terminal".
         Keep it concise.
         Return ONLY valid JSON.
         """

@@ -104,7 +104,7 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
                     if ':' in part:
                         cat, val = part.split(':', 1)
                         try:
-                            impacts.append(Impact(category=cat.strip(), value=int(val.strip())))
+                            impacts.append(Impact(category=cat.strip(), value=float(val.strip())))
                         except ValueError:
                             pass # Handle parsing error gracefully
             else:
@@ -113,7 +113,7 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
                 c_imp_val = row.get(f'choice_{i}_impact_value')
 
                 if not pd.isna(c_imp_cat) and not pd.isna(c_imp_val):
-                    impacts.append(Impact(category=str(c_imp_cat), value=int(c_imp_val)))
+                    impacts.append(Impact(category=str(c_imp_cat), value=float(c_imp_val)))
 
             choices.append(Choice(
                 id=f"{row['id']}_c{i}",
@@ -135,3 +135,45 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
     scenario = Scenario(environment=environment, nodes=nodes, rubric=rubric)
     validate_scenario(scenario)
     return scenario
+
+def extract_roles_from_csv(df: pd.DataFrame) -> List[str]:
+    """
+    Extracts playable roles from the context CSV.
+    Looks for columns like 'ACTEURS DE LA CRISE', 'Roles', 'Personnages', 'Actors'.
+    """
+    possible_cols = ['ACTEURS DE LA CRISE', 'Roles', 'Personnages', 'Actors', 'Joueurs']
+
+    roles = []
+
+    # 1. Check for specific columns
+    found_col = None
+    for col in possible_cols:
+        # Case insensitive check
+        matches = [c for c in df.columns if c.lower() == col.lower()]
+        if matches:
+            found_col = matches[0]
+            break
+
+    if found_col:
+        # If the column exists, we assume it contains a comma-separated list of roles in the first row(s)
+        # OR each row is a role?
+        # Based on user's previous JSON example: "ACTEURS DE LA CRISE": "Service de sécurité de l'école, directeur, élèves"
+        # This implies it's a single cell with a list.
+
+        # Iterate over first few rows to find non-empty value
+        for val in df[found_col]:
+            if pd.notna(val):
+                val_str = str(val)
+                # Split by comma
+                extracted = [r.strip() for r in val_str.split(',') if r.strip()]
+                roles.extend(extracted)
+                if roles: break # Found roles, stop looking
+
+    # Deduplicate
+    roles = list(set(roles))
+
+    # Fallback if empty
+    if not roles:
+        roles = ["Directeur", "Responsable Sécurité", "Responsable Communication", "Maire", "Préfet"]
+
+    return sorted(roles)

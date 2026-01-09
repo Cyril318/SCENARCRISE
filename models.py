@@ -18,6 +18,7 @@ class Node(BaseModel):
     type: str = "normal"  # start, normal, terminal
     timer: int = 30  # seconds
     choices: List[Choice] = []
+    private_info: Dict[str, str] = {}  # Role -> Private Message
 
     @validator('type')
     def validate_type(cls, v):
