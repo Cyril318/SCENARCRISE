@@ -10,6 +10,7 @@ from engine import ScenarioEngine
 from utils import load_json_scenario, load_csv_data, extract_roles_from_csv, clean_json_string
 from ai import AIIntegration
 from gamestate import GameManager
+from streamlit_autorefresh import st_autorefresh
 
 # Page Config
 st.set_page_config(page_title="CrisisSim AI Multiplayer", layout="wide", initial_sidebar_state="expanded")
@@ -239,6 +240,24 @@ else:
         display_debriefing(engine)
 
     else:
+        # Auto-refresh for timer logic (every 2 seconds)
+        count = st_autorefresh(interval=2000, limit=None, key="fizzbuzzcounter")
+
+        # Timer Logic
+        elapsed = time.time() - engine.node_start_time
+        remaining = max(0, current_node.timer - int(elapsed))
+
+        # Timeout Handling
+        if remaining == 0:
+            # Force pass for inactive players
+            for pid, p in game_manager.players.items():
+                if p.role and not p.has_acted:
+                    game_manager.submit_action(pid, "[PASSE (TIMEOUT)]")
+
+            # If current user hasn't acted, rerun to show updated state
+            if player and player.role and not player.has_acted:
+                st.rerun()
+
         # Header
         st.markdown(f"""
         <div class="branding-header">
@@ -252,7 +271,10 @@ else:
 
         with col_main:
             # Timer Display
-            st.warning(f"⏳ Temps conseillé pour ce tour : {current_node.timer} secondes")
+            if remaining > 0:
+                st.info(f"⏳ Temps restant : {remaining} secondes")
+            else:
+                st.error("⏳ TEMPS ÉCOULÉ !")
 
             # Context
             st.markdown(f"""
