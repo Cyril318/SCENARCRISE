@@ -119,26 +119,79 @@ class AIIntegration:
         """
         return self._generate_content_with_fallback(prompt)
 
-    def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str, turn_count: int = 0) -> Optional[str]:
+    def generate_next_node(self, history_context: str, current_node_text: str, choice_text: str, turn_count: int = 0, random_events_enabled: bool = False) -> Optional[str]:
         """
         Generates the next node based on the user's choice (or multiple users' actions).
         """
         if not self.client:
             return None
 
+        # --- PHASE LOGIC ---
+        # Determine current phase based on turn count
+        phase_context = ""
+        current_phase_name = ""
+
+        if turn_count <= 5:
+            current_phase_name = "Phase 1: OBSERVATION & INCERTITUDE"
+            phase_context = """
+            🔵 PHASE 1 : OBSERVATION & INCERTITUDE.
+            - Plusieurs acteurs signalent quelque chose de suspect, mais c'est flou.
+            - Il y a de l'incertitude, des rumeurs, des "bruits faibles".
+            - Ce n'est pas encore la panique, mais l'incompréhension domine.
+            - NE PARLE PAS TOUT DE SUITE DES PARENTS/MEDIA sauf si nécessaire.
+            - Pose le décor, montre des dysfonctionnements isolés qui ne font pas encore "crise".
+            """
+        elif turn_count <= 12:
+            current_phase_name = "Phase 2: ALERTE & MONTÉE EN PUISSANCE"
+            phase_context = """
+            🟠 PHASE 2 : ALERTE & MONTÉE EN PUISSANCE.
+            - Le problème est identifié et commence à prendre de l'envergure.
+            - La panique se fait ressentir.
+            - Les acteurs sont sous pression et peuvent prendre de MAUVAISES DÉCISIONS.
+            - Les impacts s'aggravent (ex: panne réseau -> plus de mail -> décision bloquée).
+            """
+        else:
+            current_phase_name = "Phase 3: RÉSOLUTION & URGENCES"
+            phase_context = """
+            🔴 PHASE 3 : RÉSOLUTION & URGENCES.
+            - Les secours/renforts arrivent ou agissent.
+            - Les solutions techniques ou humaines sont déployées (avec plus ou moins de succès).
+            - On gère les conséquences ultimes.
+            """
+
         # Logic to enforce termination around 20 turns
         termination_instruction = ""
         if turn_count >= 20:
-            termination_instruction = "CRITICAL: This is the 20th turn. You MUST end the simulation now. Generate a conclusion based on the user's performance. Set 'type': 'terminal'."
+            termination_instruction = "CRITICAL: This is the 20th turn. You MUST end the simulation now. Generate a conclusion (debriefing) based on the user's performance. Set 'type': 'terminal'."
         elif turn_count >= 15:
             termination_instruction = "NOTE: The simulation is approaching its end (Turn 20). Start wrapping up the narrative and converging towards a conclusion."
 
+        # Random Events
+        random_events_instruction = ""
+        if random_events_enabled:
+             random_events_instruction = """
+             OPTION HOST: Les événements aléatoires sont ACTIVÉS.
+             Tu peux, si tu le juges pertinent pour le rythme, introduire un "Inject Surprise" (ex: Météo, Panne, Rumeur, Accident externe) qui n'est pas directement lié aux actions des joueurs mais qui complique la situation.
+             """
+
         # Handle multiple actions (Multiplayer)
-        # If choice_text is a formatted string of multiple actions, the prompt adapts nicely.
         actions_description = choice_text
 
         prompt = f"""
-        Continue the crisis simulation (Multiplayer). Turn {turn_count + 1}.
+        Tu es un Scénariste de Crise Expert (MEL).
+        Génère la suite de la simulation (Tour {turn_count + 1}).
+
+        === PHASE ACTUELLE : {current_phase_name} ===
+        {phase_context}
+
+        === RÈGLES D'OR (CRITIQUES) ===
+        1. *Début de la crise* : Ne va pas trop vite. Montre les signaux faibles avant la crise majeure.
+        2. *DESTINATAIRES* : Le texte doit s'adresser aux acteurs présents dans le contexte.
+        3. *CONTINUITÉ & PROFONDEUR* : Décris les IMPACTS EN CASCADE. (Ex: Panne -> Pas de mail -> Décision bloquée).
+        4. *COHÉRENCE TEMPORELLE* : Assure-toi que les événements suivent une logique temporelle par rapport à l'historique.
+        5. *SCORING* : Évalue les actions des joueurs. Si elles sont bonnes (cohérentes, proactives), donne un score positif. Si elles sont mauvaises (passives, dangereuses), score négatif.
+
+        {random_events_instruction}
 
         Context/History:
         {history_context}
@@ -148,16 +201,14 @@ class AIIntegration:
         User Actions (Team):
         {actions_description}
 
-        Analyze the collective actions of the players (different roles) and generate the consolidated consequences (the next inject/event).
-        Consider how different actions might conflict or synergize.
-        NOTE: If a player action is "[PASSE]", interpret it as the character doing nothing, waiting, or being passive this turn.
+        Analyse les actions collectives et génère la suite (conséquences + nouveaux événements).
+        Si l'action est "[PASSE]", le joueur est passif.
 
         {termination_instruction}
 
         CRITICAL INSTRUCTION:
         1. The text description of the node MUST end with a clear Call to Action or a situation requiring intervention from at least one of the players/roles.
         2. Generate PRIVATE INFORMATION for specific roles if they would notice something others wouldn't, or if they are in a specific location.
-           This is especially important from Turn 2 onwards to create information asymmetry.
 
         Return a JSON object for the NEXT node:
         {{
@@ -167,6 +218,8 @@ class AIIntegration:
               "Role Name": "Information privée spécifique à ce rôle (en Français)...",
               "Another Role": "Autre info..."
           }},
+          "score_delta": 0.0,
+          "score_reasoning": "Explication courte de l'impact sur le score...",
           "image_prompt": "Visual description...",
           "type": "normal",
           "timer": 30,
@@ -174,12 +227,9 @@ class AIIntegration:
         }}
 
         IMPORTANT:
-        1. The content (text and private_info) MUST be in FRENCH.
+        1. The content (text, private_info, score_reasoning) MUST be in FRENCH.
         2. Do NOT generate choices. The user will type their next action freely. Return an empty list [] for "choices".
-        3. Even though there are no choices, you can still estimate the impact of the USER'S ACTION on the score.
-           However, since the schema puts impacts on choices, we cannot easily return impacts here without a dummy choice.
-           WORKAROUND: Return a single dummy choice in the list ONLY if you need to apply a score impact, otherwise empty.
-           Actually, let's keep it simple: Return an EMPTY choices list. We will rely on the narrative for now.
+        3. `score_delta` should be a float (e.g., 5.0, -10.0, 0.0). Positive for good crisis management, negative for mistakes.
 
         If the story should end, set "type": "terminal".
         Keep it concise.
