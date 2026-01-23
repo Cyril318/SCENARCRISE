@@ -251,6 +251,9 @@ else:
         col_main, col_side = st.columns([2, 1])
 
         with col_main:
+            # Timer Display
+            st.warning(f"⏳ Temps conseillé pour ce tour : {current_node.timer} secondes")
+
             # Context
             st.markdown(f"""
             <div class="context-box">

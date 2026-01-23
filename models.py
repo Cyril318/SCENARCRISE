@@ -16,7 +16,7 @@ class Node(BaseModel):
     text: str
     image_prompt: Optional[str] = None
     type: str = "normal"  # start, normal, terminal
-    timer: int = 30  # seconds
+    timer: int = 120  # seconds
     choices: List[Choice] = []
     private_info: Dict[str, str] = {}  # Role -> Private Message
     score_delta: float = 0.0
@@ -32,7 +32,7 @@ class Environment(BaseModel):
     branding_title: str
     branding_subtitle: str
     context_description: str
-    default_timer: int = 30
+    default_timer: int = 120
 
 class ScoringRubric(BaseModel):
     weights: Dict[str, float]

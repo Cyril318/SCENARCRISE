@@ -190,6 +190,8 @@ class AIIntegration:
         3. *CONTINUITÉ & PROFONDEUR* : Décris les IMPACTS EN CASCADE. (Ex: Panne -> Pas de mail -> Décision bloquée).
         4. *COHÉRENCE TEMPORELLE* : Assure-toi que les événements suivent une logique temporelle par rapport à l'historique.
         5. *SCORING* : Évalue les actions des joueurs. Si elles sont bonnes (cohérentes, proactives), donne un score positif. Si elles sont mauvaises (passives, dangereuses), score négatif.
+        6. *STYLE FACTUEL & IMPERSONNEL* : Dans le champ "text" (Public), sois FACTUEL. Ne nomme pas spécifiquement qui a fait quoi sauf si c'est indispensable. Décris les conséquences de manière objective (Ex: "Une évacuation a été ordonnée" au lieu de "Le Maire a ordonné...").
+        7. *COMMUNICATIONS PRIVÉES* : Si un joueur envoie un message ou une information à un autre rôle spécifique (ex: "J'appelle le Maire"), tu DOIS mettre le contenu de ce message dans le champ `private_info` du DESTINATAIRE (Le Maire), pour simuler la réception de l'info.
 
         {random_events_instruction}
 
