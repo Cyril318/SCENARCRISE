@@ -240,8 +240,8 @@ else:
         display_debriefing(engine)
 
     else:
-        # Auto-refresh for timer logic (every 2 seconds)
-        count = st_autorefresh(interval=2000, limit=None, key="fizzbuzzcounter")
+        # Auto-refresh for timer logic (every 62 seconds as requested)
+        count = st_autorefresh(interval=62000, limit=None, key="fizzbuzzcounter")
 
         # Timer Logic
         elapsed = time.time() - engine.node_start_time
