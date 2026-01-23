@@ -7,7 +7,7 @@ import uuid
 
 from models import Scenario, Node, Environment, ScoringRubric, Choice
 from engine import ScenarioEngine
-from utils import load_json_scenario, load_csv_data, extract_roles_from_csv
+from utils import load_json_scenario, load_csv_data, extract_roles_from_csv, clean_json_string
 from ai import AIIntegration
 from gamestate import GameManager
 
@@ -331,9 +331,8 @@ else:
 
                                 if json_str:
                                     # Parse and Update
-                                    json_str_clean = json_str.strip()
-                                    if json_str_clean.startswith("```json"): json_str_clean = json_str_clean[7:]
-                                    if json_str_clean.endswith("```"): json_str_clean = json_str_clean[:-3]
+                                    # Use utility cleaner
+                                    json_str_clean = clean_json_string(json_str)
 
                                     try:
                                         next_node_data = json.loads(json_str_clean)

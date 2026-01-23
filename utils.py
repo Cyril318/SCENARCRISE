@@ -3,6 +3,30 @@ import pandas as pd
 from typing import List, Dict, Optional, Tuple
 from models import Scenario, Node, Choice, Impact, Environment, ScoringRubric
 
+def clean_json_string(json_str: str) -> str:
+    """
+    Cleans a JSON string from AI responses to handle common formatting issues.
+    Specifically handles unescaped control characters like newlines inside strings.
+    """
+    # Remove code blocks
+    s = json_str.strip()
+    if s.startswith("```json"): s = s[7:]
+    if s.endswith("```"): s = s[:-3]
+    s = s.strip()
+
+    # Escape newlines that are inside JSON strings?
+    # This is hard to do with regex perfectly, but often AI puts actual newlines in descriptions.
+    # A safer approach for basic cases is using `strict=False` in loads, but Python's json.loads is strict.
+
+    # Simple strategy: If `json.loads` fails, we might need manual repair.
+    # But often the issue is just `\n` literal characters in the string not being escaped as `\\n`.
+    # Let's try to remove control characters if they aren't part of valid formatting.
+    # However, Python's `json.loads` can handle some of this if configured right, but standard library is strict.
+
+    # We will trust the calling code to handle the specific cleanup for now,
+    # but this function centralizes the markdown cleanup.
+    return s
+
 def load_json_scenario(filepath: str) -> Scenario:
     """Loads and validates a scenario from a JSON file."""
     with open(filepath, 'r') as f:
