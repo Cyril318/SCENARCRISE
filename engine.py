@@ -16,6 +16,18 @@ class ScenarioEngine:
         self.log: List[str] = []
         self.node_start_time = time.time()
         self.history: List[Dict] = [] # stores visited nodes and choices made
+        self.score_history: List[Dict] = [] # stores score evolution
+
+    def apply_turn_score(self, turn: int, delta: float, reasoning: str):
+        """Applies score changes for a turn (used in AI multiplayer)."""
+        self.score += delta
+        self.last_score_delta = delta
+        self.score_history.append({
+            "turn": turn,
+            "score": self.score,
+            "delta": delta,
+            "reasoning": reasoning
+        })
 
     def add_node(self, node: Node):
         """Adds a new node to the scenario map."""
@@ -96,3 +108,4 @@ class ScenarioEngine:
         self.log = []
         self.node_start_time = time.time()
         self.history = []
+        self.score_history = []
