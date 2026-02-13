@@ -6,25 +6,49 @@ from models import Scenario, Node, Choice, Impact, Environment, ScoringRubric
 def clean_json_string(json_str: str) -> str:
     """
     Cleans a JSON string from AI responses to handle common formatting issues.
-    Specifically handles unescaped control characters like newlines inside strings.
+    Handles markdown fences, unescaped control characters, and trailing commas.
     """
-    # Remove code blocks
+    import re
+
     s = json_str.strip()
-    if s.startswith("```json"): s = s[7:]
-    if s.endswith("```"): s = s[:-3]
+
+    # Remove markdown code fences (```json ... ``` or ``` ... ```)
+    if s.startswith("```json"):
+        s = s[7:]
+    elif s.startswith("```"):
+        s = s[3:]
+    if s.endswith("```"):
+        s = s[:-3]
     s = s.strip()
 
-    # Escape newlines that are inside JSON strings?
-    # This is hard to do with regex perfectly, but often AI puts actual newlines in descriptions.
-    # A safer approach for basic cases is using `strict=False` in loads, but Python's json.loads is strict.
+    # If it's already valid JSON, return early
+    try:
+        json.loads(s)
+        return s
+    except (json.JSONDecodeError, ValueError):
+        pass
 
-    # Simple strategy: If `json.loads` fails, we might need manual repair.
-    # But often the issue is just `\n` literal characters in the string not being escaped as `\\n`.
-    # Let's try to remove control characters if they aren't part of valid formatting.
-    # However, Python's `json.loads` can handle some of this if configured right, but standard library is strict.
+    # Remove trailing commas before } or ] (common AI mistake)
+    s = re.sub(r',\s*([}\]])', r'\1', s)
 
-    # We will trust the calling code to handle the specific cleanup for now,
-    # but this function centralizes the markdown cleanup.
+    # Escape unescaped control characters inside JSON string values
+    # Replace actual newlines/tabs inside strings with escaped versions
+    def _escape_control_chars(match):
+        content = match.group(0)
+        content = content.replace('\n', '\\n')
+        content = content.replace('\r', '\\r')
+        content = content.replace('\t', '\\t')
+        return content
+
+    # Match JSON string values (between double quotes, handling escaped quotes)
+    s = re.sub(r'"(?:[^"\\]|\\.)*"', _escape_control_chars, s, flags=re.DOTALL)
+
+    # Final validation attempt
+    try:
+        json.loads(s)
+    except (json.JSONDecodeError, ValueError):
+        pass  # Return best-effort cleaned string
+
     return s
 
 def load_json_scenario(filepath: str) -> Scenario:

@@ -1,5 +1,5 @@
-from typing import List, Optional, Dict
-from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Dict, Literal
+from pydantic import BaseModel, Field, field_validator
 
 class Impact(BaseModel):
     category: str
@@ -15,18 +15,12 @@ class Node(BaseModel):
     id: str
     text: str
     image_prompt: Optional[str] = None
-    type: str = "normal"  # start, normal, terminal
+    type: Literal["start", "normal", "terminal"] = "normal"
     timer: int = 120  # seconds
     choices: List[Choice] = []
     private_info: Dict[str, str] = {}  # Role -> Private Message
     score_delta: float = 0.0
     score_reasoning: Optional[str] = None
-
-    @validator('type')
-    def validate_type(cls, v):
-        if v not in ['start', 'normal', 'terminal']:
-            raise ValueError('type must be one of start, normal, terminal')
-        return v
 
 class Environment(BaseModel):
     branding_title: str

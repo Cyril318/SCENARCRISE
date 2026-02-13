@@ -15,21 +15,34 @@ from streamlit_autorefresh import st_autorefresh
 # Page Config
 st.set_page_config(page_title="CrisisSim AI Multiplayer", layout="wide", initial_sidebar_state="expanded")
 
-def display_debriefing(engine):
+def _assess_performance(score: float, num_turns: int) -> tuple:
+    """Return (label, severity) based on score normalized by number of turns."""
+    if num_turns == 0:
+        return ("No data", "info")
+    avg_per_turn = score / num_turns
+    if avg_per_turn >= 3.0:
+        return ("Excellent Crisis Management", "success")
+    elif avg_per_turn >= 0.0:
+        return ("Acceptable Performance", "warning")
+    else:
+        return ("Critical Failure", "error")
+
+
+def display_debriefing(engine, game_manager=None):
     st.markdown("<h1 style='text-align: center; color: #ef4444;'>MISSION DEBRIEFING</h1>", unsafe_allow_html=True)
+
+    num_turns = len(engine.score_history) if engine.score_history else 0
 
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Final Score", f"{engine.score:.1f}")
+        if num_turns > 0:
+            st.caption(f"Average per turn: {engine.score / num_turns:+.1f}")
 
     with col2:
         st.caption("Performance Assessment")
-        if engine.score > 50:
-            st.success("Excellent Crisis Management")
-        elif engine.score > 0:
-            st.warning("Acceptable Performance")
-        else:
-            st.error("Critical Failure")
+        label, severity = _assess_performance(engine.score, num_turns)
+        getattr(st, severity)(label)
 
     # Score Graph
     if engine.score_history:
@@ -43,6 +56,18 @@ def display_debriefing(engine):
         with st.expander(f"Turn {entry['turn']} (Delta: {entry['delta']:+.1f})", expanded=False):
             st.write(f"**Score:** {entry['score']:.1f}")
             st.info(entry['reasoning'])
+
+    # Export button
+    if game_manager:
+        st.divider()
+        report = game_manager.export_game_report()
+        report_json = json.dumps(report, ensure_ascii=False, indent=2)
+        st.download_button(
+            label="Download Debriefing Report (JSON)",
+            data=report_json,
+            file_name=f"debriefing_{report.get('title', 'game')}.json",
+            mime="application/json"
+        )
 
 
 # Initialize Global Game Manager (Singleton)
@@ -158,11 +183,8 @@ elif not game_manager.game_started:
                         json_str = st.session_state.ai_client.generate_initial_node(env_text)
 
                         if json_str:
-                             # Parsing logic similar to before
-                            json_str_clean = json_str.strip()
-                            if json_str_clean.startswith("```json"): json_str_clean = json_str_clean[7:]
-                            if json_str_clean.endswith("```"): json_str_clean = json_str_clean[:-3]
                             try:
+                                json_str_clean = clean_json_string(json_str)
                                 data = json.loads(json_str_clean)
                                 if isinstance(data, list): data = data[0] if len(data) > 0 else {}
 
@@ -231,13 +253,19 @@ else:
     engine = game_manager.engine
     player = game_manager.players.get(st.session_state.session_id)
 
-    if not player or not player.role:
-        st.error("You are observing (No Role assigned).")
+    # Heartbeat & cleanup disconnected players
+    game_manager.heartbeat(st.session_state.session_id)
+    game_manager.cleanup_disconnected(timeout_seconds=180)
+
+    is_observer = (not player or not player.role)
+
+    if is_observer:
+        st.info("Mode Observateur - Vous suivez la partie en lecture seule.")
 
     current_node = engine.get_current_node()
 
     if current_node.type == 'terminal':
-        display_debriefing(engine)
+        display_debriefing(engine, game_manager)
 
     else:
         # Auto-refresh for timer logic (every 62 seconds as requested)
@@ -272,9 +300,9 @@ else:
         with col_main:
             # Timer Display
             if remaining > 0:
-                st.info(f"⏳ Temps restant : {remaining} secondes")
+                st.info(f"Temps restant : {remaining} secondes")
             else:
-                st.error("⏳ TEMPS ÉCOULÉ !")
+                st.error("TEMPS ECOUL !")
 
             # Context
             st.markdown(f"""
@@ -284,18 +312,18 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # Private Information Check
-            if player and player.role and current_node.private_info:
+            # Private Information Check (not for observers)
+            if not is_observer and player and player.role and current_node.private_info:
                 role_private_msg = current_node.private_info.get(player.role)
                 if role_private_msg:
-                    with st.expander("🔒 PRIVATE INTEL (Only for your eyes)", expanded=True):
+                    with st.expander("PRIVATE INTEL (Only for your eyes)", expanded=True):
                         st.info(role_private_msg)
 
-            # Input Area
-            if player and player.role and not player.has_acted:
+            # Input Area (not for observers)
+            if not is_observer and player and player.role and not player.has_acted:
                 st.subheader(f"Your Action: {player.role}")
                 with st.form(key=f"action_form_{game_manager.current_turn}"):
-                    action_text = st.text_area("Describe your decision...", height=100)
+                    action_text = st.text_area("Describe your decision...", height=100, max_chars=1000)
                     c1, c2 = st.columns([1, 1])
                     with c1:
                         submit = st.form_submit_button("Submit Action", type="primary")
@@ -308,8 +336,8 @@ else:
                 elif pass_turn:
                     game_manager.submit_action(st.session_state.session_id, "[PASSE]")
                     st.rerun()
-            elif player and player.has_acted:
-                st.info("✅ Action submitted. Waiting for other players...")
+            elif not is_observer and player and player.has_acted:
+                st.info("Action submitted. Waiting for other players...")
                 st.markdown(f"**Your Action:** {player.last_action}")
 
         with col_side:
@@ -317,8 +345,13 @@ else:
             all_acted = True
             for pid, p in game_manager.players.items():
                 if not p.role: continue
-                status = "✅ Ready" if p.has_acted else "⏳ Thinking..."
-                if not p.has_acted: all_acted = False
+                if not p.connected:
+                    status = "Disconnected"
+                elif p.has_acted:
+                    status = "Ready"
+                else:
+                    status = "Thinking..."
+                    all_acted = False
                 st.write(f"**{p.role}** ({p.name}): {status}")
 
             st.markdown("---")
@@ -333,69 +366,15 @@ else:
 
                 if all_acted:
                     if st.button("PROCESS TURN >>", type="primary"):
-                        # Process Turn Logic
                         with st.spinner("Simulating Consequences..."):
-                            actions = game_manager.get_turn_actions()
-
-                            # Construct prompt input from multiple actions
-                            action_summary = "\\n".join([f"- {role}: {act}" for role, act in actions.items()])
-
-                            history_str = json.dumps(engine.history[-5:])
-
-                            # Call AI
-                            if not st.session_state.ai_client:
-                                st.error("Host lost AI connection. Re-enter key.")
+                            error = game_manager.process_turn(
+                                st.session_state.ai_client,
+                                random_events=random_events
+                            )
+                            if error:
+                                st.error(error)
                             else:
-                                json_str = st.session_state.ai_client.generate_next_node(
-                                    history_str,
-                                    current_node.text,
-                                    action_summary,
-                                    turn_count=game_manager.current_turn,
-                                    random_events_enabled=random_events
-                                )
-
-                                if json_str:
-                                    # Parse and Update
-                                    # Use utility cleaner
-                                    json_str_clean = clean_json_string(json_str)
-
-                                    try:
-                                        next_node_data = json.loads(json_str_clean)
-                                        if isinstance(next_node_data, list): next_node_data = next_node_data[0]
-
-                                        from models import Node
-                                        next_node = Node(**next_node_data)
-                                        if next_node.id in engine.nodes_map:
-                                            next_node.id = f"{next_node.id}_{int(time.time())}"
-
-                                        # Apply Score (Hidden)
-                                        if next_node.score_reasoning: # Ensure it exists
-                                             engine.apply_turn_score(
-                                                 game_manager.current_turn,
-                                                 next_node.score_delta,
-                                                 next_node.score_reasoning
-                                             )
-
-                                        # Update Engine
-                                        engine.add_node(next_node)
-
-                                        # Record history (aggregated)
-                                        engine.history.append({
-                                            "turn": game_manager.current_turn,
-                                            "node_id": current_node.id,
-                                            "actions": actions,
-                                            "next_node_id": next_node.id
-                                        })
-
-                                        # Manually move current node since we don't have a choice index
-                                        engine.current_node_id = next_node.id
-
-                                        # Advance Game Manager Turn
-                                        game_manager.advance_turn()
-                                        st.rerun()
-
-                                    except Exception as e:
-                                        st.error(f"Error processing turn: {e}")
+                                st.rerun()
                 else:
                     st.caption("Wait for all players to act.")
 

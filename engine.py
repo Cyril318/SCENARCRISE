@@ -30,10 +30,9 @@ class ScenarioEngine:
         })
 
     def add_node(self, node: Node):
-        """Adds a new node to the scenario map."""
+        """Adds a new node to the scenario map and resets the timer."""
         self.nodes_map[node.id] = node
-        # We don't necessarily update scenario.nodes list unless we want to serialize it back
-        # But for runtime, map is enough.
+        self.node_start_time = time.time()
 
     def get_current_node(self) -> Node:
         return self.nodes_map[self.current_node_id]
