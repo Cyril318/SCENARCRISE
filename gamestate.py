@@ -26,6 +26,25 @@ class GameManager:
 
     def register_player(self, session_id: str, name: str) -> Player:
         with self._lock:
+            # Try to reconnect: find existing player with same name but different session_id
+            existing_pid = None
+            for pid, p in self.players.items():
+                if p.name == name and pid != session_id:
+                    existing_pid = pid
+                    break
+
+            if existing_pid:
+                # Migrate old session to new session_id (browser refreshed)
+                old_player = self.players.pop(existing_pid)
+                old_player.session_id = session_id
+                old_player.last_seen = time.time()
+                old_player.connected = True
+                self.players[session_id] = old_player
+                # Update host reference if needed
+                if self.host_session_id == existing_pid:
+                    self.host_session_id = session_id
+                return old_player
+
             if session_id not in self.players:
                 self.players[session_id] = Player(session_id, name)
                 if self.host_session_id is None:

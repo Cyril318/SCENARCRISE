@@ -79,20 +79,37 @@ game_manager = get_game_manager()
 
 # Initialize Local Session State
 if 'session_id' not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4()) # Unique ID for this browser tab
+    st.session_state.session_id = str(uuid.uuid4())
 if 'ai_client' not in st.session_state:
     st.session_state.ai_client = None
+
+# Recover player name from query params (survives browser refresh)
+_qp = st.query_params
+if 'player_name' not in st.session_state and _qp.get("player"):
+    recovered_name = _qp["player"]
+    st.session_state.player_name = recovered_name
+    # Re-register with new session_id — GameManager will reconnect by name
+    game_manager.register_player(st.session_state.session_id, recovered_name)
 
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # doesn't even have to be reachable
         s.connect(('10.255.255.255', 1))
         IP = s.getsockname()[0]
         s.close()
         return IP
     except Exception:
         return "127.0.0.1"
+
+def get_public_url():
+    """Detect public tunnel URL from environment variable or Streamlit Cloud."""
+    import os
+    # Support for: PUBLIC_URL, TUNNEL_URL, or Streamlit Cloud
+    for var in ("PUBLIC_URL", "TUNNEL_URL", "RENDER_EXTERNAL_URL"):
+        url = os.environ.get(var)
+        if url:
+            return url.rstrip("/")
+    return None
 
 # Inject Custom CSS
 def local_css():
@@ -139,12 +156,15 @@ if 'player_name' not in st.session_state:
 
     if submit_login and name_input:
         st.session_state.player_name = name_input
-        # Register player
+        st.query_params["player"] = name_input
         game_manager.register_player(st.session_state.session_id, name_input)
         st.rerun()
 
 # 2. LOBBY & ROLE SELECTION
 elif not game_manager.game_started:
+    # Auto-refresh lobby so remote players see updates
+    st_autorefresh(interval=8000, limit=None, key="lobby_refresh")
+
     st.markdown("<h1 style='text-align: center;'>Lobby</h1>", unsafe_allow_html=True)
 
     player = game_manager.register_player(st.session_state.session_id, st.session_state.player_name)
@@ -211,19 +231,43 @@ elif not game_manager.game_started:
 
         # Invite Section
         with st.expander("Invite Players", expanded=True):
-            st.info("Share this URL with other players to join the lobby:")
+            st.info("Partagez cette URL aux autres joueurs :")
 
-            local_ip = get_local_ip()
-            lan_url = f"http://{local_ip}:8501"
+            public_url = get_public_url()
+            if public_url:
+                st.markdown("**URL Publique (Reseau universitaire / Internet) :**")
+                st.code(public_url, language=None)
+                st.success("Les joueurs sur n'importe quel reseau peuvent rejoindre via cette URL.")
+            else:
+                local_ip = get_local_ip()
+                lan_url = f"http://{local_ip}:8501"
 
-            st.markdown("**Local Network (LAN):**")
-            st.code(lan_url, language=None)
-            st.caption("Use this if players are on the same WiFi.")
+                st.markdown("**Reseau local (LAN / meme WiFi) :**")
+                st.code(lan_url, language=None)
 
-            st.markdown("**Localhost (Host only):**")
-            st.code("http://localhost:8501", language=None)
+                st.markdown("**Localhost (hote uniquement) :**")
+                st.code("http://localhost:8501", language=None)
 
-            st.warning("⚠️ Ensure your firewall allows incoming connections on port 8501 if connecting from another computer.")
+                st.divider()
+                st.markdown("**Pour un reseau public (universite, etc.) :**")
+                st.markdown("""
+Lancez un tunnel avec l'une de ces commandes :
+```bash
+# Option 1 : localtunnel (npm)
+npx localtunnel --port 8501
+
+# Option 2 : ngrok
+ngrok http 8501
+
+# Option 3 : cloudflared
+cloudflared tunnel --url http://localhost:8501
+```
+Puis definissez la variable d'environnement avant de lancer :
+```bash
+PUBLIC_URL=https://votre-url.ngrok.io streamlit run app.py
+```
+                """)
+                st.warning("Sur un reseau universitaire, le LAN direct ne fonctionne souvent pas. Utilisez un tunnel.")
 
         st.divider()
 
@@ -245,13 +289,16 @@ elif not game_manager.game_started:
             role_str = f"[{p.role}]" if p.role else "[No Role]"
             st.write(f"👤 {p.name} {role_str}")
 
-    if st.button("Refresh Lobby"):
-        st.rerun()
+    st.caption("Le lobby se rafraichit automatiquement toutes les 8 secondes.")
 
 # 3. GAMEPLAY
 else:
     engine = game_manager.engine
     player = game_manager.players.get(st.session_state.session_id)
+
+    # Late joiner or reconnecting player: register them
+    if not player and 'player_name' in st.session_state:
+        player = game_manager.register_player(st.session_state.session_id, st.session_state.player_name)
 
     # Heartbeat & cleanup disconnected players
     game_manager.heartbeat(st.session_state.session_id)
@@ -268,8 +315,8 @@ else:
         display_debriefing(engine, game_manager)
 
     else:
-        # Auto-refresh for timer logic (every 62 seconds as requested)
-        count = st_autorefresh(interval=62000, limit=None, key="fizzbuzzcounter")
+        # Auto-refresh for sync between players (every 8 seconds)
+        count = st_autorefresh(interval=8000, limit=None, key="gameplay_refresh")
 
         # Timer Logic
         elapsed = time.time() - engine.node_start_time
@@ -355,8 +402,6 @@ else:
                 st.write(f"**{p.role}** ({p.name}): {status}")
 
             st.markdown("---")
-            if st.button("Refresh State"):
-                st.rerun()
 
             # Host Controls to Process Turn
             is_host = (game_manager.host_session_id == st.session_state.session_id)
