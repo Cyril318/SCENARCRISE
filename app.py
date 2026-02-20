@@ -207,7 +207,7 @@ if 'player_name' not in st.session_state:
 # 2. LOBBY & ROLE SELECTION
 elif not game_manager.game_started:
     # Auto-refresh lobby so remote players see updates
-    st_autorefresh(interval=8000, limit=None, key="lobby_refresh")
+    st_autorefresh(interval=15000, limit=None, key="lobby_refresh")
 
     st.markdown("<h1 style='text-align: center;'>Lobby</h1>", unsafe_allow_html=True)
 
@@ -342,7 +342,7 @@ PUBLIC_URL=https://votre-url.ngrok.io streamlit run app.py
             role_str = f"[{p.role}]" if p.role else "[No Role]"
             st.write(f"👤 {p.name} {role_str}")
 
-    st.caption("Le lobby se rafraichit automatiquement toutes les 8 secondes.")
+    st.caption("Le lobby se rafraichit automatiquement toutes les 15 secondes.")
 
 # 3. GAMEPLAY
 else:
@@ -370,7 +370,7 @@ else:
 
     else:
         # Auto-refresh for sync between players (every 8 seconds)
-        count = st_autorefresh(interval=8000, limit=None, key="gameplay_refresh")
+        count = st_autorefresh(interval=30000, limit=None, key="gameplay_refresh")
 
         # Timer Logic
         elapsed = time.time() - engine.node_start_time
