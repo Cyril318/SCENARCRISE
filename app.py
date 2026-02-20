@@ -409,7 +409,7 @@ else:
             player_role = player.role if player else None
             display_injects(current_node.injects, player_role, is_spectator)
 
-            # === SPECTATOR: System State Dashboard (Omniscience) ===
+            # === SPECTATOR: System State + Trame Narrative (Omniscience) ===
             if is_spectator:
                 with st.expander("📊 Etat Systeme (Vue Spectateur)", expanded=True):
                     state = engine.system_state
@@ -425,6 +425,53 @@ else:
                         st.metric("Contamination", f"{state.contamination_level:.0f}%")
                     if state.custom_metrics:
                         st.write("**Metriques specifiques:**", state.custom_metrics)
+
+                # Global narrative thread for spectators
+                if engine.narrative_memory:
+                    with st.expander("📖 Trame Narrative Globale", expanded=True):
+                        st.markdown(engine.narrative_memory)
+
+            # === PLAYER: Accumulated Knowledge ("Dossier de crise") ===
+            if not is_observer and not is_spectator and player_role and engine.history:
+                past_knowledge = []
+                for entry in engine.history:
+                    if "injects" not in entry:
+                        continue
+                    turn_num = entry.get("turn", "?")
+                    turn_injects = []
+                    for inj in entry.get("injects", []):
+                        inj_targets = inj.get("target_roles", [])
+                        is_public = not inj_targets
+                        is_for_me = player_role in inj_targets
+                        if is_public or is_for_me:
+                            turn_injects.append(inj)
+                    if turn_injects:
+                        past_knowledge.append((turn_num, turn_injects))
+
+                if past_knowledge:
+                    with st.expander(f"📂 Dossier de crise — {len(past_knowledge)} tours d'informations", expanded=False):
+                        for turn_num, injects_list in reversed(past_knowledge):
+                            st.markdown(f"**--- Tour {turn_num} ---**")
+                            for inj in injects_list:
+                                inj_targets = inj.get("target_roles", [])
+                                src = inj.get("source", "?")
+                                content = inj.get("content", "")
+                                if inj_targets:
+                                    st.caption(f"🔒 **{src}** : {content}")
+                                else:
+                                    st.caption(f"**{src}** : {content}")
+
+                        # Also show player's own past actions
+                        own_actions = []
+                        for entry in engine.history:
+                            applied = entry.get("applied_actions", {})
+                            if player_role in applied:
+                                own_actions.append((entry.get("turn", "?"), applied[player_role]))
+                        if own_actions:
+                            st.markdown("---")
+                            st.markdown("**Vos decisions passees :**")
+                            for turn_num, act in own_actions:
+                                st.caption(f"Tour {turn_num} : {act}")
 
             # Input Area (not for observers or spectators)
             if not is_observer and not is_spectator and player and player.role and not player.has_acted:

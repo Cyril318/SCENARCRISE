@@ -141,7 +141,8 @@ class AIIntegration:
         turn_count: int = 0,
         random_events_enabled: bool = False,
         inter_player_messages: str = "",
-        narrative_memory: str = ""
+        narrative_memory: str = "",
+        active_roles: str = ""
     ) -> Optional[str]:
         """Generates the next node as a Crisis Router: injects + updated system_state."""
         if not self.client:
@@ -230,6 +231,30 @@ class AIIntegration:
         5. SOURCES COHERENTES : Les sources recurrentes (CODIS, Mairie, etc.) doivent
            garder un ton et un comportement coherent d'un tour a l'autre.
 
+        === ROLES ACTIFS DANS LA CELLULE DE CRISE ===
+        {active_roles}
+
+        === REGLES DE REALISME DES ACTIONS ===
+        Chaque role a un PERIMETRE DE COMPETENCES realiste. Evalue chaque action deployee selon :
+        1. Le role a-t-il l'AUTORITE pour cette action ? (Ex: un Pompier ne peut pas declarer
+           l'etat d'urgence — c'est le Prefet/Maire. Un Directeur d'ecole ne peut pas
+           mobiliser l'armee.)
+        2. Le role a-t-il les MOYENS MATERIELS ? (Ex: un Maire ne peut pas eteindre un feu
+           lui-meme. Un Communicant ne peut pas deployer des secours medicaux.)
+        3. L'action est-elle PROPORTIONNEE a la situation ? (Ex: evacuer une ville entiere
+           pour un petit incident est disproportionne.)
+        4. L'action est-elle PHYSIQUEMENT POSSIBLE dans le delai d'un tour ?
+
+        CONSEQUENCES :
+        - Action REALISTE et PERTINENTE : score positif, l'action a son plein effet dans l'histoire.
+        - Action REALISTE mais MAL ADAPTEE : score negatif leger, l'action a un effet mais negatif.
+        - Action HORS COMPETENCES : score negatif, l'action est IGNOREE ou ECHOUE dans l'histoire.
+          Genere un inject expliquant pourquoi (ex: "La demande de frappe aerienne du Directeur
+          d'ecole a ete rejetee par la Prefecture" ou "Le Pompier n'a pas l'autorite pour
+          ordonner une evacuation municipale — cette decision releve du Maire").
+        - Action ABSURDE ou IMPOSSIBLE : score tres negatif (-5 a -10), l'action est ignoree,
+          et un inject mentionne le dysfonctionnement de la cellule de crise.
+
         === REGLES DU ROUTEUR ===
         1. Genere entre 2 et 5 INJECTS (messages heterogenes provenant de sources differentes).
         2. Chaque inject a une "source" (ex: "CODIS", "Temoin", "Mairie", "Presse locale", "Service technique").
@@ -238,8 +263,10 @@ class AIIntegration:
            - ["Pompier"] = uniquement visible par le role Pompier
            - ["Maire", "Communication"] = visible par ces deux roles
         4. Les injects peuvent etre CONTRADICTOIRES entre eux (un temoin dit X, un rapport dit Y).
-        5. EVALUE les actions deployees. Si bonnes : score positif. Si mauvaises : score negatif.
-        6. Mets a jour le system_state en fonction de l'evolution de la crise et des actions deployees.
+        5. EVALUE les actions deployees selon les REGLES DE REALISME ci-dessus.
+           Si bonnes ET realistes : score positif. Si mauvaises OU hors competences : score negatif.
+        6. Mets a jour le system_state en fonction de l'evolution de la crise et des actions
+           REELLEMENT EXECUTEES (les actions hors competences ne modifient PAS le system_state).
         7. Les actions "en attente de deploiement" ne sont PAS encore effectives — mentionne-les
            seulement si un role pourrait en avoir connaissance indirecte.
 

@@ -296,6 +296,13 @@ class GameManager:
         else:
             messages_summary = "(Aucune communication inter-joueurs recente)"
 
+        # Build roles description for action realism validation
+        roles_in_play = []
+        for pid, p in self.players.items():
+            if p.role and p.role != "spectateur" and p.connected:
+                roles_in_play.append(p.role)
+        roles_description = ", ".join(roles_in_play) if roles_in_play else "(aucun role actif)"
+
         if not ai_client or not ai_client.client:
             return "AI client not available. Re-enter API key."
 
@@ -308,7 +315,8 @@ class GameManager:
             turn_count=self.current_turn,
             random_events_enabled=random_events,
             inter_player_messages=messages_summary,
-            narrative_memory=self.engine.narrative_memory
+            narrative_memory=self.engine.narrative_memory,
+            active_roles=roles_description
         )
 
         if not json_str:
