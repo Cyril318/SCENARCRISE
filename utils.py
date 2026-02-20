@@ -1,7 +1,8 @@
 import json
 import pandas as pd
 from typing import List, Dict, Optional, Tuple
-from models import Scenario, Node, Choice, Impact, Environment, ScoringRubric
+from models import Scenario, Node, Choice, Impact, Environment, ScoringRubric, Inject
+
 
 def clean_json_string(json_str: str) -> str:
     """
@@ -32,7 +33,6 @@ def clean_json_string(json_str: str) -> str:
     s = re.sub(r',\s*([}\]])', r'\1', s)
 
     # Escape unescaped control characters inside JSON string values
-    # Replace actual newlines/tabs inside strings with escaped versions
     def _escape_control_chars(match):
         content = match.group(0)
         content = content.replace('\n', '\\n')
@@ -40,24 +40,66 @@ def clean_json_string(json_str: str) -> str:
         content = content.replace('\t', '\\t')
         return content
 
-    # Match JSON string values (between double quotes, handling escaped quotes)
     s = re.sub(r'"(?:[^"\\]|\\.)*"', _escape_control_chars, s, flags=re.DOTALL)
 
-    # Final validation attempt
     try:
         json.loads(s)
     except (json.JSONDecodeError, ValueError):
-        pass  # Return best-effort cleaned string
+        pass
 
     return s
+
+
+def migrate_legacy_node_data(data: dict) -> dict:
+    """Backward compatibility: convert old format (text + private_info) to new format (injects).
+    If the data contains 'text' and/or 'private_info' but no 'injects', convert them."""
+    if "injects" in data and data["injects"]:
+        # New format — check for leftover legacy fields and remove them
+        data.pop("text", None)
+        data.pop("private_info", None)
+        return data
+
+    injects = []
+
+    # Convert 'text' to a public inject
+    text = data.pop("text", None)
+    if text and isinstance(text, str) and text.strip():
+        injects.append({
+            "source": "Situation generale",
+            "content": text.strip(),
+            "target_roles": []
+        })
+
+    # Convert 'private_info' dict to targeted injects
+    private_info = data.pop("private_info", None)
+    if private_info and isinstance(private_info, dict):
+        for role, msg in private_info.items():
+            if msg and isinstance(msg, str) and msg.strip():
+                injects.append({
+                    "source": "Renseignement interne",
+                    "content": msg.strip(),
+                    "target_roles": [role]
+                })
+
+    if injects:
+        data["injects"] = injects
+
+    return data
+
 
 def load_json_scenario(filepath: str) -> Scenario:
     """Loads and validates a scenario from a JSON file."""
     with open(filepath, 'r') as f:
         data = json.load(f)
+
+    # Migrate nodes if in legacy format
+    if "nodes" in data:
+        data["nodes"] = [migrate_legacy_node_data(n) for n in data["nodes"]]
+
     scenario = Scenario(**data)
     validate_scenario(scenario)
     return scenario
+
 
 def validate_scenario(scenario: Scenario, partial: bool = False):
     """
@@ -68,12 +110,10 @@ def validate_scenario(scenario: Scenario, partial: bool = False):
     """
     nodes_by_id = {n.id: n for n in scenario.nodes}
 
-    # 1. Unique start node (not referenced by next) - actually, explicit 'start' type is better
     start_nodes = [n for n in scenario.nodes if n.type == 'start']
     if len(start_nodes) != 1:
         raise ValueError(f"Scenario must have exactly one node with type='start'. Found {len(start_nodes)}.")
 
-    # Strict validation: Start node should not be referenced by any next_node_id
     start_node_id = start_nodes[0].id
     for node in scenario.nodes:
         if node.type != 'terminal':
@@ -82,27 +122,20 @@ def validate_scenario(scenario: Scenario, partial: bool = False):
                      raise ValueError(f"Start node '{start_node_id}' is referenced by node '{node.id}', choice '{choice.id}'. Start node must be unique and not referenced.")
 
     if not partial:
-        # 2. At least one terminal node
         terminal_nodes = [n for n in scenario.nodes if n.type == 'terminal']
         if len(terminal_nodes) < 1:
             raise ValueError("Scenario must have at least one node with type='terminal'.")
 
-        # Check node references
         for node in scenario.nodes:
             if node.type != 'terminal':
                 for choice in node.choices:
                     if choice.next_node_id and choice.next_node_id not in nodes_by_id:
-                         # It's possible to have a terminal choice leading nowhere if handled, but let's warn or error
-                         # For now, we allow None for next_node_id if it ends the game or something, but usually it should match.
                          raise ValueError(f"Node {node.id} choice {choice.id} references unknown node {choice.next_node_id}")
 
+
 def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
-    """
-    Loads scenario from 3 CSV files.
-    """
-    # Load Environment
+    """Loads scenario from 3 CSV files."""
     env_df = pd.read_csv(env_path)
-    # Assume single row for environment
     env_row = env_df.iloc[0]
     environment = Environment(
         branding_title=env_row.get('branding_title', 'CrisisSim'),
@@ -111,20 +144,11 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
         default_timer=int(env_row.get('default_timer', 30))
     )
 
-    # Load Rubric
     rubric_df = pd.read_csv(rubric_path)
     weights = {}
     for _, row in rubric_df.iterrows():
         weights[row['category']] = float(row['weight'])
     rubric = ScoringRubric(weights=weights)
-
-    # Load Nodes
-    # Expect columns: id, text, type, image_prompt, choice1_text, choice1_next, choice1_impact_cat, choice1_impact_val, ...
-    # This is a bit complex for CSV flat format, but let's assume a simplified flat structure
-    # OR we assume multiple rows per node? The prompt says "Gérer le CSV ENVIRONNEMENT, NOEUDS, RUBRIQUE_SCORING de façon équivalente."
-    # Let's assume a flat structure where each node is a row, and choices are columns (choice_1_text, etc) or separate rows.
-    # A robust way is one row per node, with JSON strings for choices, OR fixed number of choices.
-    # The prompt says "3 choix" in the last line description of CrisisSim. Let's assume 3 choices columns.
 
     nodes_df = pd.read_csv(nodes_path)
     nodes = []
@@ -135,18 +159,12 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
             c_text = row.get(f'choice_{i}_text')
             c_next = row.get(f'choice_{i}_next')
 
-            # Check if choice exists
             if pd.isna(c_text) or c_text == '':
                 continue
 
             impacts = []
-            # Support multiple impacts via semicolon-separated string: "cat1:val1;cat2:val2"
-            # OR legacy separate columns for simple single impact.
-
-            # Check for impacts string column first
             c_imp_str = row.get(f'choice_{i}_impacts')
             if not pd.isna(c_imp_str):
-                # Parse string "cat:val;cat:val"
                 parts = str(c_imp_str).split(';')
                 for part in parts:
                     if ':' in part:
@@ -154,9 +172,8 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
                         try:
                             impacts.append(Impact(category=cat.strip(), value=float(val.strip())))
                         except ValueError:
-                            pass # Handle parsing error gracefully
+                            pass
             else:
-                # Fallback to single columns
                 c_imp_cat = row.get(f'choice_{i}_impact_category')
                 c_imp_val = row.get(f'choice_{i}_impact_value')
 
@@ -170,19 +187,30 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
                 impacts=impacts
             ))
 
-        node = Node(
-            id=str(row['id']),
-            text=str(row['text']),
-            image_prompt=str(row['image_prompt']) if not pd.isna(row.get('image_prompt')) else None,
-            type=str(row['type']),
-            timer=int(row.get('timer', environment.default_timer)),
-            choices=choices
-        )
+        # Build node data dict and migrate legacy format
+        node_data = {
+            "id": str(row['id']),
+            "type": str(row['type']),
+            "timer": int(row.get('timer', environment.default_timer)),
+            "choices": choices,
+        }
+        if not pd.isna(row.get('image_prompt')):
+            node_data["image_prompt"] = str(row['image_prompt'])
+
+        # Handle text column (legacy) -> convert to public inject
+        text_val = row.get('text')
+        if not pd.isna(text_val) and str(text_val).strip():
+            node_data["injects"] = [
+                Inject(source="Situation generale", content=str(text_val).strip(), target_roles=[])
+            ]
+
+        node = Node(**node_data)
         nodes.append(node)
 
     scenario = Scenario(environment=environment, nodes=nodes, rubric=rubric)
     validate_scenario(scenario)
     return scenario
+
 
 def extract_roles_from_csv(df: pd.DataFrame) -> List[str]:
     """
@@ -193,35 +221,24 @@ def extract_roles_from_csv(df: pd.DataFrame) -> List[str]:
 
     roles = []
 
-    # 1. Check for specific columns
     found_col = None
     for col in possible_cols:
-        # Case insensitive check
         matches = [c for c in df.columns if c.lower() == col.lower()]
         if matches:
             found_col = matches[0]
             break
 
     if found_col:
-        # If the column exists, we assume it contains a comma-separated list of roles in the first row(s)
-        # OR each row is a role?
-        # Based on user's previous JSON example: "ACTEURS DE LA CRISE": "Service de sécurité de l'école, directeur, élèves"
-        # This implies it's a single cell with a list.
-
-        # Iterate over first few rows to find non-empty value
         for val in df[found_col]:
             if pd.notna(val):
                 val_str = str(val)
-                # Split by comma
                 extracted = [r.strip() for r in val_str.split(',') if r.strip()]
                 roles.extend(extracted)
-                if roles: break # Found roles, stop looking
+                if roles: break
 
-    # Deduplicate
     roles = list(set(roles))
 
-    # Fallback if empty
     if not roles:
-        roles = ["Directeur", "Responsable Sécurité", "Responsable Communication", "Maire", "Préfet"]
+        roles = ["Directeur", "Responsable Securite", "Responsable Communication", "Maire", "Prefet"]
 
     return sorted(roles)

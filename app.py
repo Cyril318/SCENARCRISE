@@ -5,9 +5,9 @@ import time
 import socket
 import uuid
 
-from models import Scenario, Node, Environment, ScoringRubric, Choice
+from models import Scenario, Node, Environment, ScoringRubric, Choice, Inject, SystemState
 from engine import ScenarioEngine
-from utils import load_json_scenario, load_csv_data, extract_roles_from_csv, clean_json_string
+from utils import load_json_scenario, load_csv_data, extract_roles_from_csv, clean_json_string, migrate_legacy_node_data
 from ai import AIIntegration
 from gamestate import GameManager
 from streamlit_autorefresh import st_autorefresh
@@ -50,6 +50,21 @@ def display_debriefing(engine, game_manager=None):
         df_score = pd.DataFrame(engine.score_history)
         st.line_chart(df_score, x='turn', y='score')
 
+    # Final System State (full disclosure at debriefing)
+    st.divider()
+    st.subheader("Etat Final du Systeme")
+    state = engine.system_state
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.metric("Infrastructures", f"{state.infrastructure_health:.0f}%")
+        st.metric("Victimes", f"{state.casualties}")
+    with col_b:
+        st.metric("Panique publique", f"{state.public_panic:.0f}%")
+        st.metric("Pression media", f"{state.media_pressure:.0f}%")
+    with col_c:
+        st.metric("Ressources", f"{state.resources_available:.0f}%")
+        st.metric("Contamination", f"{state.contamination_level:.0f}%")
+
     st.divider()
     st.subheader("Detailed Timeline & Analysis")
     for entry in engine.score_history:
@@ -70,6 +85,34 @@ def display_debriefing(engine, game_manager=None):
         )
 
 
+def display_injects(injects, player_role, is_spectator):
+    """Display injects filtered by role with proper formatting.
+
+    Rules:
+    1. inject.target_roles is empty -> Public message (everyone sees it)
+    2. player.role in inject.target_roles -> Private targeted message
+    3. player is spectator -> Sees EVERYTHING (omniscience)
+    """
+    for inject in injects:
+        is_public = not inject.target_roles
+        is_targeted_to_me = player_role and player_role in inject.target_roles
+
+        if is_spectator:
+            # Spectator omniscience: sees everything with annotation
+            if is_public:
+                st.info(f"**{inject.source}** : {inject.content}")
+            else:
+                st.caption(f"👁️ [Vue Spectateur] Message cible pour : {', '.join(inject.target_roles)}")
+                st.warning(f"🔒 **{inject.source}** : {inject.content}")
+        elif is_public:
+            # Public message: visible to all players
+            st.info(f"**{inject.source}** : {inject.content}")
+        elif is_targeted_to_me:
+            # Private message targeted to this player's role
+            st.warning(f"🔒 MESSAGE PRIVE - Source: **{inject.source}**\n\n{inject.content}")
+        # else: not visible to this player (asymmetric info)
+
+
 # Initialize Global Game Manager (Singleton)
 @st.cache_resource
 def get_game_manager():
@@ -88,7 +131,6 @@ _qp = st.query_params
 if 'player_name' not in st.session_state and _qp.get("player"):
     recovered_name = _qp["player"]
     st.session_state.player_name = recovered_name
-    # Re-register with new session_id — GameManager will reconnect by name
     game_manager.register_player(st.session_state.session_id, recovered_name)
 
 def get_local_ip():
@@ -104,7 +146,6 @@ def get_local_ip():
 def get_public_url():
     """Detect public tunnel URL from environment variable or Streamlit Cloud."""
     import os
-    # Support for: PUBLIC_URL, TUNNEL_URL, or Streamlit Cloud
     for var in ("PUBLIC_URL", "TUNNEL_URL", "RENDER_EXTERNAL_URL"):
         url = os.environ.get(var)
         if url:
@@ -122,6 +163,9 @@ def local_css():
     .role-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; background-color: #3b82f6; color: white; font-weight: bold; margin-right: 0.5rem; }
     .status-acted { color: #10b981; font-weight: bold; }
     .status-waiting { color: #f59e0b; font-weight: bold; }
+    .inject-public { border-left: 4px solid #3b82f6; padding-left: 10px; margin-bottom: 10px; }
+    .inject-private { border-left: 4px solid #f59e0b; padding-left: 10px; margin-bottom: 10px; background-color: #1c1917; }
+    .inject-spectator { border-left: 4px solid #8b5cf6; padding-left: 10px; margin-bottom: 10px; opacity: 0.9; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -198,7 +242,6 @@ elif not game_manager.game_started:
                      st.error("AI Key Required")
                 else:
                     with st.spinner("Initializing Scenario..."):
-                         # Generate start node
                         env_text = st.session_state.env_text
                         json_str = st.session_state.ai_client.generate_initial_node(env_text)
 
@@ -211,8 +254,17 @@ elif not game_manager.game_started:
                                 env_data = data.get("environment")
                                 rubric_data = data.get("rubric")
                                 start_node_data = data.get("start_node")
+                                sys_state_data = data.get("system_state")
+
+                                # Backward compatibility: migrate legacy start_node
+                                if start_node_data:
+                                    start_node_data = migrate_legacy_node_data(start_node_data)
 
                                 if env_data and start_node_data:
+                                    # Attach system_state to start node if provided
+                                    if sys_state_data:
+                                        start_node_data["system_state"] = sys_state_data
+
                                     scenario = Scenario(
                                         environment=Environment(**env_data),
                                         rubric=ScoringRubric(**(rubric_data or {"weights":{}})),
@@ -274,14 +326,15 @@ PUBLIC_URL=https://votre-url.ngrok.io streamlit run app.py
         # Display list of players
         my_player = game_manager.players.get(st.session_state.session_id)
 
-        # Role Selector
+        # Role Selector (+ spectateur option)
         if game_manager.roles_available:
-            selected_role = st.selectbox("Select Your Role", [""] + game_manager.roles_available)
+            role_options = [""] + game_manager.roles_available + ["spectateur"]
+            selected_role = st.selectbox("Select Your Role", role_options)
             if selected_role:
                 if game_manager.assign_role(st.session_state.session_id, selected_role):
                     st.success(f"Role assigned: {selected_role}")
                 else:
-                    if my_player.role != selected_role:
+                    if my_player and my_player.role != selected_role:
                         st.warning("Role taken!")
 
         st.divider()
@@ -304,6 +357,7 @@ else:
     game_manager.heartbeat(st.session_state.session_id)
     game_manager.cleanup_disconnected(timeout_seconds=180)
 
+    is_spectator = (player and player.role == "spectateur")
     is_observer = (not player or not player.role)
 
     if is_observer:
@@ -324,13 +378,11 @@ else:
 
         # Timeout Handling
         if remaining == 0:
-            # Force pass for inactive players
             for pid, p in game_manager.players.items():
-                if p.role and not p.has_acted:
+                if p.role and p.role != "spectateur" and not p.has_acted:
                     game_manager.submit_action(pid, "[PASSE (TIMEOUT)]")
 
-            # If current user hasn't acted, rerun to show updated state
-            if player and player.role and not player.has_acted:
+            if player and player.role and player.role != "spectateur" and not player.has_acted:
                 st.rerun()
 
         # Header
@@ -349,33 +401,42 @@ else:
             if remaining > 0:
                 st.info(f"Temps restant : {remaining} secondes")
             else:
-                st.error("TEMPS ECOUL !")
+                st.error("TEMPS ECOULE !")
 
-            # Context
-            st.markdown(f"""
-            <div class="context-box">
-                <h3>Situation Report (Turn {game_manager.current_turn})</h3>
-                <p style="font-size: 1.1rem; line-height: 1.6;">{current_node.text}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            # === INJECT DISPLAY (Fog of War + Asymmetry) ===
+            st.subheader(f"Cellule de Crise - Tour {game_manager.current_turn}")
 
-            # Private Information Check (not for observers)
-            if not is_observer and player and player.role and current_node.private_info:
-                role_private_msg = current_node.private_info.get(player.role)
-                if role_private_msg:
-                    with st.expander("PRIVATE INTEL (Only for your eyes)", expanded=True):
-                        st.info(role_private_msg)
+            player_role = player.role if player else None
+            display_injects(current_node.injects, player_role, is_spectator)
 
-            # Input Area (not for observers)
-            if not is_observer and player and player.role and not player.has_acted:
-                st.subheader(f"Your Action: {player.role}")
+            # === SPECTATOR: System State Dashboard (Omniscience) ===
+            if is_spectator:
+                with st.expander("📊 Etat Systeme (Vue Spectateur)", expanded=True):
+                    state = engine.system_state
+                    sc1, sc2, sc3 = st.columns(3)
+                    with sc1:
+                        st.metric("Infrastructures", f"{state.infrastructure_health:.0f}%")
+                        st.metric("Victimes", f"{state.casualties}")
+                    with sc2:
+                        st.metric("Panique", f"{state.public_panic:.0f}%")
+                        st.metric("Media", f"{state.media_pressure:.0f}%")
+                    with sc3:
+                        st.metric("Ressources", f"{state.resources_available:.0f}%")
+                        st.metric("Contamination", f"{state.contamination_level:.0f}%")
+                    if state.custom_metrics:
+                        st.write("**Metriques specifiques:**", state.custom_metrics)
+
+            # Input Area (not for observers or spectators)
+            if not is_observer and not is_spectator and player and player.role and not player.has_acted:
+                st.subheader(f"Votre Action : {player.role}")
                 with st.form(key=f"action_form_{game_manager.current_turn}"):
-                    action_text = st.text_area("Describe your decision...", height=100, max_chars=1000)
+                    action_text = st.text_area("Decrivez votre decision...", height=100, max_chars=1000)
+                    st.caption("⏳ Vos ordres seront deployes au tour suivant (latence de deploiement).")
                     c1, c2 = st.columns([1, 1])
                     with c1:
-                        submit = st.form_submit_button("Submit Action", type="primary")
+                        submit = st.form_submit_button("Soumettre", type="primary")
                     with c2:
-                        pass_turn = st.form_submit_button("Pass Turn")
+                        pass_turn = st.form_submit_button("Passer le tour")
 
                 if submit and action_text:
                     game_manager.submit_action(st.session_state.session_id, action_text)
@@ -383,15 +444,17 @@ else:
                 elif pass_turn:
                     game_manager.submit_action(st.session_state.session_id, "[PASSE]")
                     st.rerun()
-            elif not is_observer and player and player.has_acted:
-                st.info("Action submitted. Waiting for other players...")
-                st.markdown(f"**Your Action:** {player.last_action}")
+            elif not is_observer and not is_spectator and player and player.has_acted:
+                st.info("Action soumise. En attente des autres joueurs...")
+                st.caption("⏳ Vos ordres seront deployes au prochain tour.")
+                st.markdown(f"**Votre action :** {player.last_action}")
 
         with col_side:
             st.subheader("Team Status")
             all_acted = True
             for pid, p in game_manager.players.items():
-                if not p.role: continue
+                if not p.role or p.role == "spectateur":
+                    continue
                 if not p.connected:
                     status = "Disconnected"
                 elif p.has_acted:
@@ -400,6 +463,15 @@ else:
                     status = "Thinking..."
                     all_acted = False
                 st.write(f"**{p.role}** ({p.name}): {status}")
+
+            # Show delayed actions info
+            delayed = game_manager.get_turn_actions()
+            if delayed:
+                with st.expander("📋 Actions deployees ce tour", expanded=False):
+                    for role, act in delayed.items():
+                        st.write(f"**{role}:** {act}")
+            else:
+                st.caption("Aucune action deployee ce tour (premier tour ou pas d'ordres precedents).")
 
             st.markdown("---")
 
@@ -411,7 +483,7 @@ else:
 
                 if all_acted:
                     if st.button("PROCESS TURN >>", type="primary"):
-                        with st.spinner("Simulating Consequences..."):
+                        with st.spinner("Routeur de crise en action..."):
                             error = game_manager.process_turn(
                                 st.session_state.ai_client,
                                 random_events=random_events
@@ -426,8 +498,15 @@ else:
     # Shared Log
     st.markdown("---")
     with st.expander("Mission Log"):
-        # Custom log display for multiplayer
         for entry in engine.history:
-             if "actions" in entry:
-                 st.write(f"**Turn {entry.get('turn')}**")
-                 st.write("Actions:", entry["actions"])
+            if "injects" in entry:
+                st.write(f"**Turn {entry.get('turn')}**")
+                if entry.get("applied_actions"):
+                    st.write("Actions deployees:", entry["applied_actions"])
+                for inj in entry.get("injects", []):
+                    target = ", ".join(inj.get("target_roles", [])) or "PUBLIC"
+                    st.caption(f"[{inj.get('source', '?')} -> {target}] {inj.get('content', '')}")
+            elif "actions" in entry:
+                # Legacy log format
+                st.write(f"**Turn {entry.get('turn')}**")
+                st.write("Actions:", entry["actions"])
