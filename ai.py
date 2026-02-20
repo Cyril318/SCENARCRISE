@@ -321,7 +321,7 @@ class AIIntegration:
           "story_summary": "Resume cumulatif COMPLET de la situation. Inclure : (1) les lieux cles et leur etat, (2) les personnes/entites nommees et leur role, (3) les evenements majeurs et leur statut (en cours/resolu/aggrave), (4) les decisions prises et leurs consequences observees, (5) les fils narratifs ouverts (questions non resolues, menaces en cours). Ce champ REMPLACE la memoire precedente — il doit etre COMPLET et autonome, pas un diff. 3-8 phrases.",
           "image_prompt": "Visual description...",
           "type": "normal",
-          "timer": 30,
+          "timer": 120,
           "choices": []
         }}
 
@@ -332,6 +332,9 @@ class AIIntegration:
         4. Au moins 1 inject public et 1 inject cible par role.
         5. Si la situation doit se terminer, set "type": "terminal".
         6. Le champ "story_summary" est OBLIGATOIRE. Il sert de memoire entre les tours.
-        7. Return ONLY valid JSON.
+        7. Le timer DOIT etre d'au minimum 120 secondes (2 minutes) pour laisser aux
+           joueurs le temps d'analyser la situation, communiquer entre eux et decider.
+           En phase 1, utiliser 180s. En phase 2-3, utiliser 120-150s.
+        8. Return ONLY valid JSON.
         """
         return self._generate_content_with_fallback(prompt)

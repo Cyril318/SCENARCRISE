@@ -141,7 +141,7 @@ def load_csv_data(env_path: str, nodes_path: str, rubric_path: str) -> Scenario:
         branding_title=env_row.get('branding_title', 'CrisisSim'),
         branding_subtitle=env_row.get('branding_subtitle', 'Simulation'),
         context_description=env_row.get('context_description', 'No context'),
-        default_timer=int(env_row.get('default_timer', 30))
+        default_timer=int(env_row.get('default_timer', 120))
     )
 
     rubric_df = pd.read_csv(rubric_path)
