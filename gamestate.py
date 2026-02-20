@@ -201,6 +201,40 @@ class GameManager:
         with self._lock:
             return [m for m in self.messages if m.turn == turn]
 
+    def _build_structured_history(self) -> str:
+        """Build a structured, readable history context for the AI.
+        Combines narrative memory (full game summary) with detailed recent turns."""
+        if not self.engine:
+            return "(Aucun historique)"
+
+        parts = []
+
+        # Last 3 turns in detail (enough for immediate context)
+        recent = self.engine.history[-3:] if self.engine.history else []
+        if recent:
+            detail_lines = []
+            for entry in recent:
+                if "injects" not in entry:
+                    continue
+                turn = entry.get("turn", "?")
+                actions = entry.get("applied_actions", {})
+                injects = entry.get("injects", [])
+
+                detail_lines.append(f"--- Tour {turn} ---")
+                if actions:
+                    for role, act in actions.items():
+                        detail_lines.append(f"  Action [{role}]: {act}")
+                for inj in injects:
+                    src = inj.get("source", "?")
+                    content = inj.get("content", "")[:120]
+                    targets = inj.get("target_roles", [])
+                    target_str = ", ".join(targets) if targets else "PUBLIC"
+                    detail_lines.append(f"  [{src} -> {target_str}] {content}")
+
+            parts.append("DETAIL DES TOURS RECENTS:\n" + "\n".join(detail_lines))
+
+        return "\n\n".join(parts) if parts else "(Debut de la simulation)"
+
     def advance_turn(self):
         """Advance to next turn: promote pending -> delayed, reset player actions."""
         with self._lock:
@@ -236,14 +270,15 @@ class GameManager:
 
         current_node = self.engine.get_current_node()
 
-        # Build injects summary for history context
+        # Build injects summary for current situation
         injects_summary = []
         for inj in current_node.injects:
             target = ", ".join(inj.target_roles) if inj.target_roles else "PUBLIC"
             injects_summary.append(f"[{inj.source} -> {target}] {inj.content[:100]}")
         current_situation = "\n".join(injects_summary) if injects_summary else "(situation initiale)"
 
-        history_str = json.dumps(self.engine.history[-5:], ensure_ascii=False)
+        # Build structured history context (last 3 turns as detail + full narrative memory)
+        structured_history = self._build_structured_history()
 
         # Current system state (hidden metrics for AI)
         system_state_json = self.engine.system_state.model_dump_json()
@@ -265,14 +300,15 @@ class GameManager:
             return "AI client not available. Re-enter API key."
 
         json_str = ai_client.generate_next_node(
-            history_str,
+            structured_history,
             current_situation,
             applied_summary,
             pending_summary=pending_summary,
             system_state_json=system_state_json,
             turn_count=self.current_turn,
             random_events_enabled=random_events,
-            inter_player_messages=messages_summary
+            inter_player_messages=messages_summary,
+            narrative_memory=self.engine.narrative_memory
         )
 
         if not json_str:
@@ -292,6 +328,9 @@ class GameManager:
                 self.engine.update_system_state(new_state)
                 # Also attach to node for history
                 next_node_data["system_state"] = sys_state_data
+
+            # Extract story_summary for narrative memory (before creating Node)
+            story_summary = next_node_data.pop("story_summary", None)
 
             next_node = Node(**next_node_data)
             if next_node.id in self.engine.nodes_map:
@@ -325,6 +364,11 @@ class GameManager:
             })
 
             self.engine.current_node_id = next_node.id
+
+            # Update narrative memory with AI-generated summary
+            if story_summary:
+                self.engine.narrative_memory = story_summary
+
             self.advance_turn()
             return None  # Success
 

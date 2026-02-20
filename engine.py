@@ -19,6 +19,10 @@ class ScenarioEngine:
         self.history: List[Dict] = []
         self.score_history: List[Dict] = []
 
+        # Narrative memory: cumulative summary of key facts, entities, and events
+        # Updated by AI each turn to maintain story coherence across the whole game
+        self.narrative_memory: str = ""
+
         # Hidden system state (fog of war)
         if self.start_node.system_state:
             self.system_state = self.start_node.system_state
@@ -113,3 +117,4 @@ class ScenarioEngine:
         self.history = []
         self.score_history = []
         self.system_state = SystemState()
+        self.narrative_memory = ""

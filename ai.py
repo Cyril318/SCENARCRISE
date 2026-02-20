@@ -140,7 +140,8 @@ class AIIntegration:
         system_state_json: str = "{}",
         turn_count: int = 0,
         random_events_enabled: bool = False,
-        inter_player_messages: str = ""
+        inter_player_messages: str = "",
+        narrative_memory: str = ""
     ) -> Optional[str]:
         """Generates the next node as a Crisis Router: injects + updated system_state."""
         if not self.client:
@@ -190,6 +191,20 @@ class AIIntegration:
             Cet inject doit avoir une source credible et peut etre cible vers un role specifique.
             """
 
+        # Build narrative memory section
+        if narrative_memory:
+            memory_section = f"""
+        === MEMOIRE NARRATIVE (resume cumulatif de toute la simulation) ===
+        {narrative_memory}
+        INSTRUCTION CRITIQUE : Tu DOIS maintenir la coherence avec cette memoire.
+        Les noms de lieux, personnes, organisations et evenements mentionnes ci-dessus
+        sont ETABLIS — ne les change PAS, ne les contredis PAS sauf si l'histoire le justifie
+        explicitement (ex: une information se revele fausse)."""
+        else:
+            memory_section = """
+        === MEMOIRE NARRATIVE ===
+        (Premier tour — pas encore de memoire. Tu vas l'initialiser avec ton story_summary.)"""
+
         prompt = f"""
         Tu es un ROUTEUR DE CRISE (pas un narrateur).
         Ton role : generer des FRAGMENTS D'INFORMATION realistes pour la cellule de crise.
@@ -199,6 +214,21 @@ class AIIntegration:
 
         === ETAT SYSTEME CACHE (metriques physiques reelles, invisibles aux joueurs) ===
         {system_state_json}
+
+        {memory_section}
+
+        === REGLES DE COHERENCE NARRATIVE ===
+        1. CONTINUITE DES ENTITES : Si un temoin, lieu, batiment, ou organisation a ete
+           mentionne dans la memoire narrative, reutilise les MEMES noms exacts.
+           Ex: Si "M. Dupont, gardien de l'usine" a ete introduit, ne le renomme pas.
+        2. CAUSALITE : Chaque inject doit etre une consequence logique des tours precedents.
+           Une action deployee doit avoir un effet visible. Un feu non combattu doit s'aggraver.
+        3. EVOLUTION PROGRESSIVE : Les situations evoluent graduellement. Pas de saut brusque
+           (ex: un batiment intact ne s'effondre pas soudainement sans signes avant-coureurs).
+        4. FILS NARRATIFS : Si un evenement a ete lance (ex: "rumeur de fuite toxique"),
+           il doit etre suivi dans les tours suivants (confirme, dementi, ou aggrave).
+        5. SOURCES COHERENTES : Les sources recurrentes (CODIS, Mairie, etc.) doivent
+           garder un ton et un comportement coherent d'un tour a l'autre.
 
         === REGLES DU ROUTEUR ===
         1. Genere entre 2 et 5 INJECTS (messages heterogenes provenant de sources differentes).
@@ -216,7 +246,7 @@ class AIIntegration:
         {random_events_instruction}
 
         === CONTEXTE ===
-        Historique recent:
+        Historique recent (detail des derniers tours):
         {history_context}
 
         Situation actuelle (injects precedents):
@@ -261,6 +291,7 @@ class AIIntegration:
           }},
           "score_delta": float,
           "score_reasoning": "Explication courte de l'impact sur le score (en Francais)...",
+          "story_summary": "Resume cumulatif COMPLET de la situation. Inclure : (1) les lieux cles et leur etat, (2) les personnes/entites nommees et leur role, (3) les evenements majeurs et leur statut (en cours/resolu/aggrave), (4) les decisions prises et leurs consequences observees, (5) les fils narratifs ouverts (questions non resolues, menaces en cours). Ce champ REMPLACE la memoire precedente — il doit etre COMPLET et autonome, pas un diff. 3-8 phrases.",
           "image_prompt": "Visual description...",
           "type": "normal",
           "timer": 30,
@@ -273,6 +304,7 @@ class AIIntegration:
         3. score_delta : float positif (bonnes decisions) ou negatif (mauvaises).
         4. Au moins 1 inject public et 1 inject cible par role.
         5. Si la situation doit se terminer, set "type": "terminal".
-        6. Return ONLY valid JSON.
+        6. Le champ "story_summary" est OBLIGATOIRE. Il sert de memoire entre les tours.
+        7. Return ONLY valid JSON.
         """
         return self._generate_content_with_fallback(prompt)
