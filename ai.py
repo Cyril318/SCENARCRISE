@@ -139,7 +139,8 @@ class AIIntegration:
         pending_summary: str = "",
         system_state_json: str = "{}",
         turn_count: int = 0,
-        random_events_enabled: bool = False
+        random_events_enabled: bool = False,
+        inter_player_messages: str = ""
     ) -> Optional[str]:
         """Generates the next node as a Crisis Router: injects + updated system_state."""
         if not self.client:
@@ -226,6 +227,12 @@ class AIIntegration:
 
         Actions EN ATTENTE de deploiement (ordres donnes ce tour, pas encore effectifs):
         {pending_summary}
+
+        Communications INTER-JOUEURS (messages echanges entre les roles via radio/telephone):
+        {inter_player_messages}
+        NOTE: Ces messages montrent le niveau de coordination entre les acteurs de la crise.
+        Une bonne coordination devrait avoir un impact positif. Des messages contradictoires
+        ou une absence de communication peuvent aggraver la situation.
 
         {termination_instruction}
 

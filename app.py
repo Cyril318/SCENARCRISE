@@ -450,28 +450,99 @@ else:
                 st.markdown(f"**Votre action :** {player.last_action}")
 
         with col_side:
-            st.subheader("Team Status")
+            st.subheader("Cellule de Crise")
             all_acted = True
             for pid, p in game_manager.players.items():
                 if not p.role or p.role == "spectateur":
                     continue
                 if not p.connected:
-                    status = "Disconnected"
+                    status = "Deconnecte"
                 elif p.has_acted:
-                    status = "Ready"
+                    status = "Pret"
                 else:
-                    status = "Thinking..."
+                    status = "En reflexion..."
                     all_acted = False
+                # Players see names/roles (they're in the same crisis cell)
+                # but NOT what others decided — only their own status detail
                 st.write(f"**{p.role}** ({p.name}): {status}")
 
-            # Show delayed actions info
+            # Actions deployees: filtered by role (fog of war)
             delayed = game_manager.get_turn_actions()
             if delayed:
-                with st.expander("📋 Actions deployees ce tour", expanded=False):
-                    for role, act in delayed.items():
-                        st.write(f"**{role}:** {act}")
+                if is_spectator:
+                    # Spectators see all deployed actions
+                    with st.expander("📋 Actions deployees ce tour", expanded=False):
+                        for role, act in delayed.items():
+                            st.write(f"**{role}:** {act}")
+                elif player_role and player_role in delayed:
+                    # Regular players only see their own deployed action
+                    with st.expander("📋 Votre action deployee ce tour", expanded=False):
+                        st.write(f"**{player_role}:** {delayed[player_role]}")
+                else:
+                    st.caption("Aucune de vos actions deployee ce tour.")
             else:
                 st.caption("Aucune action deployee ce tour (premier tour ou pas d'ordres precedents).")
+
+            # === INTER-PLAYER MESSAGING (Radio / Communication) ===
+            if not is_observer:
+                st.markdown("---")
+                st.subheader("📻 Communications")
+
+                # Display received messages for current player
+                my_messages = game_manager.get_messages_for_player(st.session_state.session_id)
+                current_turn_msgs = [m for m in my_messages if m.turn == game_manager.current_turn]
+                older_msgs = [m for m in my_messages if m.turn < game_manager.current_turn]
+
+                if current_turn_msgs:
+                    for msg in current_turn_msgs:
+                        if msg.target_role == "__ALL__":
+                            st.info(f"📻 **{msg.sender_role}** (Radio generale) :\n{msg.content}")
+                        elif is_spectator:
+                            st.caption(f"👁️ [{msg.sender_role} -> {msg.target_role}]")
+                            st.warning(f"📨 **{msg.sender_role}** : {msg.content}")
+                        elif msg.sender_role == player_role:
+                            st.success(f"📨 Envoye a **{msg.target_role}** : {msg.content}")
+                        else:
+                            st.warning(f"📨 De **{msg.sender_role}** : {msg.content}")
+                else:
+                    st.caption("Aucun message ce tour.")
+
+                if older_msgs:
+                    with st.expander(f"Messages precedents ({len(older_msgs)})"):
+                        for msg in reversed(older_msgs):
+                            prefix = f"Tour {msg.turn}"
+                            if msg.target_role == "__ALL__":
+                                st.caption(f"{prefix} - 📻 {msg.sender_role} (Radio) : {msg.content}")
+                            elif msg.sender_role == player_role:
+                                st.caption(f"{prefix} - 📨 Envoye a {msg.target_role} : {msg.content}")
+                            elif is_spectator:
+                                st.caption(f"{prefix} - 👁️ {msg.sender_role} -> {msg.target_role} : {msg.content}")
+                            else:
+                                st.caption(f"{prefix} - 📨 De {msg.sender_role} : {msg.content}")
+
+                # Send message form (not for spectators or observers)
+                if not is_spectator and player and player.role:
+                    # Build target list: other active roles + broadcast
+                    other_roles = [
+                        r for pid, p in game_manager.players.items()
+                        if p.role and p.role != "spectateur" and p.role != player.role
+                        for r in [p.role]
+                    ]
+                    # Deduplicate (in case of data issues)
+                    other_roles = list(dict.fromkeys(other_roles))
+                    target_options = ["Tous (Radio generale)"] + other_roles
+
+                    if target_options:
+                        with st.form(key=f"msg_form_{game_manager.current_turn}_{st.session_state.session_id}"):
+                            st.markdown("**Envoyer un message**")
+                            msg_target = st.selectbox("Destinataire", target_options)
+                            msg_content = st.text_input("Message", max_chars=500, placeholder="Votre message...")
+                            send_msg = st.form_submit_button("Envoyer")
+
+                        if send_msg and msg_content:
+                            target = "__ALL__" if msg_target == "Tous (Radio generale)" else msg_target
+                            game_manager.send_message(st.session_state.session_id, target, msg_content)
+                            st.rerun()
 
             st.markdown("---")
 
@@ -495,18 +566,69 @@ else:
                 else:
                     st.caption("Wait for all players to act.")
 
-    # Shared Log
+    # Filtered Mission Log (each player sees only what they know)
     st.markdown("---")
-    with st.expander("Mission Log"):
+    with st.expander("Journal de Bord"):
+        player_role = player.role if player else None
         for entry in engine.history:
             if "injects" in entry:
-                st.write(f"**Turn {entry.get('turn')}**")
-                if entry.get("applied_actions"):
-                    st.write("Actions deployees:", entry["applied_actions"])
+                turn_num = entry.get('turn')
+
+                # Filter injects: player only sees public + targeted to them
+                visible_injects = []
                 for inj in entry.get("injects", []):
-                    target = ", ".join(inj.get("target_roles", [])) or "PUBLIC"
-                    st.caption(f"[{inj.get('source', '?')} -> {target}] {inj.get('content', '')}")
+                    inj_targets = inj.get("target_roles", [])
+                    is_public = not inj_targets
+                    is_for_me = player_role and player_role in inj_targets
+
+                    if is_spectator or is_public or is_for_me:
+                        visible_injects.append(inj)
+
+                if not visible_injects and not is_spectator:
+                    continue  # Skip turns where this player saw nothing
+
+                st.write(f"**Tour {turn_num}**")
+
+                # Actions: player only sees their own action (unless spectator)
+                applied = entry.get("applied_actions", {})
+                if applied:
+                    if is_spectator:
+                        for role, act in applied.items():
+                            st.caption(f"Action deployee [{role}]: {act}")
+                    elif player_role and player_role in applied:
+                        st.caption(f"Votre action deployee : {applied[player_role]}")
+
+                for inj in visible_injects:
+                    inj_targets = inj.get("target_roles", [])
+                    if is_spectator and inj_targets:
+                        st.caption(f"👁️ [{inj.get('source', '?')} -> {', '.join(inj_targets)}] {inj.get('content', '')}")
+                    elif inj_targets:
+                        st.caption(f"🔒 [{inj.get('source', '?')}] {inj.get('content', '')}")
+                    else:
+                        st.caption(f"[{inj.get('source', '?')}] {inj.get('content', '')}")
+
+                # Show inter-player messages for this turn
+                turn_messages = game_manager.get_messages_for_turn(turn_num)
+                for msg in turn_messages:
+                    msg_visible = (
+                        is_spectator
+                        or msg.target_role == player_role
+                        or msg.target_role == "__ALL__"
+                        or msg.sender_role == player_role
+                    )
+                    if msg_visible:
+                        if msg.target_role == "__ALL__":
+                            st.caption(f"📻 [{msg.sender_role}] (Radio generale): {msg.content}")
+                        elif is_spectator:
+                            st.caption(f"👁️ 📨 [{msg.sender_role} -> {msg.target_role}]: {msg.content}")
+                        else:
+                            if msg.sender_role == player_role:
+                                st.caption(f"📨 Envoye a {msg.target_role}: {msg.content}")
+                            else:
+                                st.caption(f"📨 De {msg.sender_role}: {msg.content}")
+
             elif "actions" in entry:
                 # Legacy log format
-                st.write(f"**Turn {entry.get('turn')}**")
-                st.write("Actions:", entry["actions"])
+                st.write(f"**Tour {entry.get('turn')}**")
+                if is_spectator:
+                    st.write("Actions:", entry["actions"])

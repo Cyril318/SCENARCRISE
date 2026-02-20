@@ -4,6 +4,17 @@ import time
 from typing import Dict, List, Optional
 
 
+class Message:
+    """A message sent between players during the game."""
+    def __init__(self, sender_role: str, sender_name: str, target_role: str, content: str, turn: int):
+        self.sender_role = sender_role
+        self.sender_name = sender_name
+        self.target_role = target_role  # Role name or "__ALL__" for broadcast
+        self.content = content
+        self.turn = turn
+        self.timestamp = time.time()
+
+
 class Player:
     def __init__(self, session_id: str, name: str):
         self.session_id = session_id
@@ -32,6 +43,9 @@ class GameManager:
         # then promote pending_actions -> delayed_actions for next turn.
         self.pending_actions: Dict[str, str] = {}   # Role -> Action (current turn, queued)
         self.delayed_actions: Dict[str, str] = {}   # Role -> Action (previous turn, applied now)
+
+        # Inter-player messaging system
+        self.messages: List[Message] = []
 
     def register_player(self, session_id: str, name: str) -> Player:
         with self._lock:
@@ -140,6 +154,53 @@ class GameManager:
         with self._lock:
             return dict(self.pending_actions)
 
+    def send_message(self, session_id: str, target_role: str, content: str) -> bool:
+        """Send a message from one player to another role (or broadcast with __ALL__)."""
+        with self._lock:
+            if session_id not in self.players:
+                return False
+            sender = self.players[session_id]
+            if not sender.role or sender.role == "spectateur":
+                return False
+            if not content.strip():
+                return False
+            msg = Message(
+                sender_role=sender.role,
+                sender_name=sender.name,
+                target_role=target_role,
+                content=content.strip(),
+                turn=self.current_turn
+            )
+            self.messages.append(msg)
+            return True
+
+    def get_messages_for_player(self, session_id: str) -> List[Message]:
+        """Returns messages visible to a player: sent to their role, broadcast, or sent by them."""
+        with self._lock:
+            if session_id not in self.players:
+                return []
+            player = self.players[session_id]
+            if not player.role:
+                return []
+            if player.role == "spectateur":
+                return list(self.messages)  # Spectators see all
+            return [
+                m for m in self.messages
+                if m.target_role == player.role
+                or m.target_role == "__ALL__"
+                or m.sender_role == player.role
+            ]
+
+    def get_all_messages(self) -> List[Message]:
+        """Returns all messages (for AI context)."""
+        with self._lock:
+            return list(self.messages)
+
+    def get_messages_for_turn(self, turn: int) -> List[Message]:
+        """Returns all messages sent during a specific turn."""
+        with self._lock:
+            return [m for m in self.messages if m.turn == turn]
+
     def advance_turn(self):
         """Advance to next turn: promote pending -> delayed, reset player actions."""
         with self._lock:
@@ -187,6 +248,19 @@ class GameManager:
         # Current system state (hidden metrics for AI)
         system_state_json = self.engine.system_state.model_dump_json()
 
+        # Build inter-player messages summary for AI awareness
+        recent_messages = self.get_all_messages()
+        # Only include messages from last 3 turns for context
+        recent_msgs = [m for m in recent_messages if m.turn >= max(1, self.current_turn - 2)]
+        if recent_msgs:
+            messages_lines = []
+            for m in recent_msgs:
+                target_str = "TOUS" if m.target_role == "__ALL__" else m.target_role
+                messages_lines.append(f"  Tour {m.turn} - {m.sender_role} -> {target_str}: {m.content}")
+            messages_summary = "\n".join(messages_lines)
+        else:
+            messages_summary = "(Aucune communication inter-joueurs recente)"
+
         if not ai_client or not ai_client.client:
             return "AI client not available. Re-enter API key."
 
@@ -197,7 +271,8 @@ class GameManager:
             pending_summary=pending_summary,
             system_state_json=system_state_json,
             turn_count=self.current_turn,
-            random_events_enabled=random_events
+            random_events_enabled=random_events,
+            inter_player_messages=messages_summary
         )
 
         if not json_str:
@@ -266,6 +341,17 @@ class GameManager:
             if p.role:
                 players_data[p.role] = p.name
 
+        # Export messages
+        messages_data = []
+        for m in self.messages:
+            messages_data.append({
+                "turn": m.turn,
+                "sender_role": m.sender_role,
+                "sender_name": m.sender_name,
+                "target_role": m.target_role,
+                "content": m.content,
+            })
+
         return {
             "title": self.engine.scenario.environment.branding_title,
             "subtitle": self.engine.scenario.environment.branding_subtitle,
@@ -275,6 +361,7 @@ class GameManager:
             "players": players_data,
             "score_history": self.engine.score_history,
             "history": self.engine.history,
+            "messages": messages_data,
         }
 
     def reset(self):
@@ -288,3 +375,4 @@ class GameManager:
             self.host_session_id = None
             self.pending_actions = {}
             self.delayed_actions = {}
+            self.messages = []
