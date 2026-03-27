@@ -1,6 +1,7 @@
 import time
 from typing import Optional, List, Dict
-from models import Scenario, Node, Choice
+from models import Scenario, Node, Choice, SystemState, Inject
+
 
 class ScenarioEngine:
     def __init__(self, scenario: Scenario):
@@ -15,8 +16,18 @@ class ScenarioEngine:
         self.last_score_delta = 0.0
         self.log: List[str] = []
         self.node_start_time = time.time()
-        self.history: List[Dict] = [] # stores visited nodes and choices made
-        self.score_history: List[Dict] = [] # stores score evolution
+        self.history: List[Dict] = []
+        self.score_history: List[Dict] = []
+
+        # Narrative memory: cumulative summary of key facts, entities, and events
+        # Updated by AI each turn to maintain story coherence across the whole game
+        self.narrative_memory: str = ""
+
+        # Hidden system state (fog of war)
+        if self.start_node.system_state:
+            self.system_state = self.start_node.system_state
+        else:
+            self.system_state = SystemState()
 
     def apply_turn_score(self, turn: int, delta: float, reasoning: str):
         """Applies score changes for a turn (used in AI multiplayer)."""
@@ -29,57 +40,56 @@ class ScenarioEngine:
             "reasoning": reasoning
         })
 
+    def update_system_state(self, new_state: SystemState):
+        """Replace the hidden system state with AI-generated update."""
+        self.system_state = new_state
+
     def add_node(self, node: Node):
-        """Adds a new node to the scenario map."""
+        """Adds a new node to the scenario map and resets the timer."""
         self.nodes_map[node.id] = node
-        # We don't necessarily update scenario.nodes list unless we want to serialize it back
-        # But for runtime, map is enough.
+        self.node_start_time = time.time()
+        # Update system state if the node carries one
+        if node.system_state:
+            self.system_state = node.system_state
 
     def get_current_node(self) -> Node:
         return self.nodes_map[self.current_node_id]
 
+    def get_injects_summary(self) -> str:
+        """Return a text summary of current node injects for logging."""
+        node = self.get_current_node()
+        lines = []
+        for inj in node.injects:
+            target = ", ".join(inj.target_roles) if inj.target_roles else "PUBLIC"
+            lines.append(f"[{inj.source} -> {target}] {inj.content[:80]}")
+        return "\n".join(lines)
+
     def make_choice(self, choice_index: int):
-        """
-        Processes a choice made by the user.
-        choice_index is 0-based.
-        """
+        """Processes a choice made by the user (single-player legacy)."""
         node = self.get_current_node()
 
         if choice_index >= len(node.choices):
-            # Fallback or error, but we should handle this gracefully
             return
 
         choice = node.choices[choice_index]
 
-        # Calculate time taken
         duration = time.time() - self.node_start_time
-        # Time score: if user is faster than node.timer, bonus? If slower, penalty?
-        # Let's implement a simple penalty for taking longer than expected.
-        # Score -= (duration - target) * factor if duration > target
-        # Or Score += (target - duration) * factor if duration < target?
-        # User said "critère de temps doit encore être pris en compte".
-        # Let's define a time factor. Say 0.5 points per second difference.
         time_impact = 0.0
         if node.timer > 0:
             diff = node.timer - duration
-            # If diff is positive (fast), small bonus. If negative (slow), penalty.
-            time_impact = diff * 0.1 # Weight 0.1 per second
+            time_impact = diff * 0.1
 
-        # Log
-        self.log.append(f"Node: {node.text[:50]}... -> Choice: {choice.text} (Time: {duration:.1f}s, Impact: {time_impact:.1f})")
+        self.log.append(f"Node: {self.get_injects_summary()[:50]}... -> Choice: {choice.text} (Time: {duration:.1f}s, Impact: {time_impact:.1f})")
 
-        # Calculate Score
         impact_score = 0
         for impact in choice.impacts:
-            weight = self.scenario.rubric.weights.get(impact.category, 1.0) # Default weight 1.0 if unknown
+            weight = self.scenario.rubric.weights.get(impact.category, 1.0)
             impact_score += impact.value * weight
 
-        # Add time impact to total score
         total_delta = impact_score + time_impact
         self.score += total_delta
         self.last_score_delta = total_delta
 
-        # Record history
         self.history.append({
             "node_id": node.id,
             "choice_id": choice.id,
@@ -89,14 +99,11 @@ class ScenarioEngine:
             "timestamp": time.time()
         })
 
-        # Move to next node
         if choice.next_node_id and choice.next_node_id in self.nodes_map:
             self.current_node_id = choice.next_node_id
-            self.node_start_time = time.time() # Reset timer for new node
+            self.node_start_time = time.time()
         else:
-            # End of scenario if no next node
             if node.type != 'terminal':
-                # Should not happen if validated, but handle it
                 pass
             pass
 
@@ -109,3 +116,5 @@ class ScenarioEngine:
         self.node_start_time = time.time()
         self.history = []
         self.score_history = []
+        self.system_state = SystemState()
+        self.narrative_memory = ""
